@@ -27,7 +27,8 @@ if 'loader' not in st.session_state:
 def initialize_loader():
     """Initialize the data loader."""
     try:
-        loader = ActivationAnalysisLoader()
+        # Use the root-level analysis directory instead of looking in dashboard/analysis
+        loader = ActivationAnalysisLoader(analysis_dir="../analysis")
         st.session_state.loader = loader
         return loader
     except Exception as e:
