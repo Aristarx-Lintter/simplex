@@ -918,3 +918,135 @@ class RegressionAnalyzer:
                         }
         
         return all_results, best_singular_dict, best_weights_dict
+
+def run_single_rcond_sweep(regression_analyzer, activation, belief_states, nn_word_probs, rcond_values):
+    """Run an rcond sweep on a single activation and target."""
+    results = []
+    
+    # Pre-compute SVD (this is the expensive part)
+    from scripts.activation_analysis.regression import compute_efficient_pinv_from_svd, standardize
+    
+    # Reshape tensors
+    X = activation.view(-1, activation.shape[-1])
+    Y = belief_states.view(-1, belief_states.shape[-1])
+    weights = nn_word_probs.view(-1)
+    
+    # Standardize features
+    X_std, mean, std = standardize(X)
+    
+    # Add bias terms and prepare weighted regression
+    ones = torch.ones(X_std.shape[0], 1, device=X_std.device)
+    X_std_bias = torch.cat([ones, X_std], dim=1)
+    sqrt_weights = torch.sqrt(weights).unsqueeze(1)
+    X_weighted = X_std_bias * sqrt_weights
+    Y_weighted = Y * sqrt_weights
+    
+    # Compute efficient pseudoinverses for all rcond values
+    A = X_weighted.T @ X_weighted
+    pinvs_dict, singular_values = compute_efficient_pinv_from_svd(A, rcond_values)
+    
+    # Run regression for each rcond value
+    for rcond in rcond_values:
+        pinv_A = pinvs_dict[rcond]
+        beta_std = pinv_A @ (X_weighted.T @ Y_weighted)
+        
+        # Get results and store
+        # [add code here to calculate and store metrics]
+        results.append({"rcond": rcond, "beta": beta_std, "singular_values": singular_values})
+    
+    return results
+
+def run_single_rcond_sweep_with_predictions(regression_analyzer, activation, belief_states, nn_word_probs, rcond_values):
+    """
+    Run an rcond sweep on a single activation and target, returning the best result with predictions.
+    
+    Args:
+        regression_analyzer: Instance of RegressionAnalyzer
+        activation: Tensor of activations
+        belief_states: Target belief states
+        nn_word_probs: Word probabilities for weighting
+        rcond_values: List of regularization parameters to try
+        
+    Returns:
+        dict: The best result (with lowest norm_dist) containing:
+            - rcond: The best regularization parameter
+            - norm_dist: The weighted error metric
+            - beta: Regression coefficients
+            - r_squared: R-squared value
+            - singular_values: Singular values from SVD
+            - predictions: The predicted belief states using the best model
+            - true_values: The actual belief states for comparison
+    """
+    best_result = None
+    best_norm_dist = float('inf')
+    
+    # Pre-compute SVD (this is the expensive part)
+    from scripts.activation_analysis.regression import compute_efficient_pinv_from_svd
+    
+    # Reshape tensors
+    X = activation.view(-1, activation.shape[-1])
+    Y = belief_states.view(-1, belief_states.shape[-1])
+    weights = nn_word_probs.view(-1)
+    
+    # Save original shapes for reshaping predictions later
+    original_shape = belief_states.shape
+    
+    # Normalize weights
+    weights = weights / weights.sum()
+    
+    # Add bias terms and prepare weighted regression
+    ones = torch.ones(X.shape[0], 1, device=X.device)
+    X_bias = torch.cat([ones, X], dim=1)
+    sqrt_weights = torch.sqrt(weights).unsqueeze(1)
+    X_weighted = X_bias * sqrt_weights
+    Y_weighted = Y * sqrt_weights
+    
+    # Compute efficient pseudoinverses for all rcond values
+    A = X_weighted.T @ X_weighted
+    pinvs_dict, singular_values = compute_efficient_pinv_from_svd(A, rcond_values)
+    
+    # Variables to store the best predictions
+    best_predictions = None
+    
+    # Run regression for each rcond value
+    for rcond in rcond_values:
+        pinv_A = pinvs_dict[rcond]
+        beta = pinv_A @ (X_weighted.T @ Y_weighted)
+        
+        # Make predictions
+        Y_pred = X_bias @ beta
+        
+        # Calculate weighted error (norm_dist)
+        distances = torch.sqrt(torch.sum((Y_pred - Y)**2, dim=1))
+        weighted_distances = distances * weights
+        norm_dist = weighted_distances.sum().item()
+        
+        # Calculate R-squared
+        total_var = torch.sum((Y_weighted - Y_weighted.mean(dim=0))**2)
+        explained_var = torch.sum((Y_pred * sqrt_weights - Y_weighted.mean(dim=0))**2)
+        r_squared = (explained_var / total_var).item()
+        
+        # Create result dictionary
+        result = {
+            "rcond": rcond,
+            "norm_dist": norm_dist,
+            "beta": beta.cpu().detach().numpy(),
+            "r_squared": r_squared,
+            "singular_values": singular_values.cpu().detach().numpy()
+        }
+        
+        # Check if this is the best result so far
+        if norm_dist < best_norm_dist:
+            best_norm_dist = norm_dist
+            best_result = result
+            best_predictions = Y_pred
+    
+    # Reshape predictions back to original shape
+    if best_predictions is not None:
+        reshaped_predictions = best_predictions.view(original_shape)
+        
+        # Add predictions to the best result
+        best_result["predictions"] = reshaped_predictions.cpu().detach().numpy()
+        best_result["true_values"] = belief_states.cpu().detach().numpy()
+    
+    return best_result

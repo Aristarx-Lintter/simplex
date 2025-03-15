@@ -245,7 +245,13 @@ def prepare_msp_data(config, model_config, loader: S3ModelLoader = None):
     msp_beliefs = [tuple(round(b, 5) for b in belief.squeeze()) for belief in tree_beliefs]
     msp_belief_index = {tuple(b): i for i, b in enumerate(set(msp_beliefs))}
     
-    nn_paths = [x for x in tree_paths if len(x) == model_config['n_ctx']]
+    # check if n_ctx is in the model_config
+    if 'n_ctx' not in model_config:
+        n_ctx = config['model_config']['n_ctx']
+    else:
+        n_ctx = model_config['n_ctx']
+
+    nn_paths = [x for x in tree_paths if len(x) == n_ctx]
     nn_inputs = torch.tensor(nn_paths, dtype=torch.int).clone().detach().to("cpu")
 
     probs_dict = {tuple(path): prob for path, prob in zip(tree_paths, path_probs)}
