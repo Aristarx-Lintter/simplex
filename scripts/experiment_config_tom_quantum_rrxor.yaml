@@ -1,0 +1,48 @@
+global_config:
+  output_dir: "./results"
+  device: cuda
+  parallel: true
+  wandb: true
+  wandb_project: "quantum_transformer"
+  process_dir: "./process_data"
+  val_every: 1 # after n epochs, ~ is None
+  scheduler: true
+  save_every: 100
+
+train_config:
+  batches_per_epoch: 100
+  bos: false
+  n_epochs: 100000
+
+model_config:
+  n_ctx: 8
+  act_fn: "relu"
+  normalization_type: "LN"
+  attn_only: false
+  seed: 42
+  dtype: float32
+  #d_model: 64, set automatically based on d_head and n_layers = d_head * n_heads
+  #d_mlp: 256, set automatically to 4 * d_model
+  #d_vocab: 3, set automatically based on process
+  #device: "mps", set automatically based on global_config
+
+sweep_config:
+  train_config:
+    learning_rate:
+      - 1.0e-4
+      - 1.0e-3
+    batch_size:
+      - 256
+      - 512
+  model_config:
+    d_head:
+      - 16
+      - 32
+    n_layers:
+      - 4
+    n_heads:
+      - 4
+  process_config:
+    - name: "rrxor"
+      pR1: 0.5
+      pR2: 0.5
