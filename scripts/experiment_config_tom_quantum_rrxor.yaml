@@ -7,12 +7,13 @@ global_config:
   process_dir: "./process_data"
   val_every: 1 # after n epochs, ~ is None
   scheduler: true
-  save_every: 100
+  save_every: 1
 
 train_config:
-  batches_per_epoch: 100
+  batches_per_epoch: 50 # match old n_iters value
   bos: false
-  n_epochs: 100000
+  n_epochs: 1000 # match old num_epochs
+
 
 model_config:
   n_ctx: 8
