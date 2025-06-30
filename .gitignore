@@ -32,3 +32,10 @@ notebooks/
 **.mp4
 **.zip
 temp/
+**.joblib
+**.pkl
+**.pt
+**.png
+**.pdf
+**.html
+**.txt

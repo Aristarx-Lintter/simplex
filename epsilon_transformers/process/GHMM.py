@@ -116,13 +116,15 @@ class GHMM(ABC):
             yield emission
             latent_state = next_latent
 
-    def derive_mixed_state_tree(self, depth: int) -> MixedStateTree:
-        tree_root = MixedStateTreeNode(state_prob_vector=self.steady_state_vector, 
-                                       unnorm_state_prob_vector=self.steady_state_vector,
+    def derive_mixed_state_tree(self, depth: int, initial_state: Optional[np.ndarray] = None) -> MixedStateTree:
+        if initial_state is None:
+            initial_state = self.steady_state_vector
+        tree_root = MixedStateTreeNode(state_prob_vector=initial_state/ (initial_state @ self.right_eigenvector), 
+                                       unnorm_state_prob_vector=initial_state,
                                        children=set(), path=[], emission_prob=0, path_prob=1.0)
         nodes = set([tree_root])
 
-        stack = deque([(tree_root, self.steady_state_vector, [], 0)])
+        stack = deque([(tree_root, initial_state, [], 0)])
         while stack:
             current_node, state_prob_vector, current_path, current_depth = stack.pop()
             #print(f"Current depth: {current_depth}")

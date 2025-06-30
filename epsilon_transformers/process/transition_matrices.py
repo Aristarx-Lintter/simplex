@@ -10,13 +10,28 @@ def get_matrix_from_args(name: str, **kwargs):
         "fanizza": fanizza,
         "rrxor": rrxor,
         "mess3": mess3,
-        "days_of_week": days_of_week
+        "days_of_week": days_of_week,
+        "zero_one_random": zero_one_random
     }
     
     if name in process_functions:
         return process_functions[name](**kwargs)
     else:
         raise ValueError(f"Invalid process name: {name}")
+    
+def zero_one_random(p=0.5):
+    """
+    Creates a transition matrix for the Zero-One Random Process.
+    Which has 3 states: "0", "1", and "R"
+    """
+    T = np.zeros((2, 3, 3))
+    state_names = {"0": 0, "1": 1, "R": 2}
+    T[0, state_names["0"], state_names["1"]] = 1.0
+    T[1, state_names["1"], state_names["R"]] = 1.0
+    T[0, state_names["R"], state_names["0"]] = p
+    T[1, state_names["R"], state_names["0"]] = 1 - p
+
+    return T
 
 def post_quantum(alpha=np.exp(1), beta=0.5):
     """

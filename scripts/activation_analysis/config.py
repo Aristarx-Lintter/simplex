@@ -56,14 +56,14 @@ class AnalysisConfig:
     
     # Sweeps to process
     SWEEPS = {
-        #'20241205175736': 'transformer',
-        #'20241121152808': 'rnn',
-        '20250304052839': 'transformer',
-        '20250304060315': 'rnn',
-        '20250304063704': 'transformer',
-        '20250304070751': 'transformer',
-        '20250304073843': 'rnn',
-        '20250304075926': 'rnn',
+        '20241205175736': 'transformer',
+        '20241121152808': 'rnn',
+        #'20250304052839': 'transformer',
+        #'20250304060315': 'rnn',
+        #'20250304063704': 'transformer',
+        #'20250304070751': 'transformer',
+        #'20250304073843': 'rnn',
+        #'20250304075926': 'rnn',
     }
     
     # Markov analysis settings
