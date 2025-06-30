@@ -39,3 +39,8 @@ temp/
 **.pdf
 **.html
 **.txt
+
+# Large notebook files
+scripts/activation_analysis/all_figs.ipynb
+scripts/activation_analysis/all_figs_Final.ipynb
+scripts/activation_analysis/all_figs_new_for_paul.ipynb
