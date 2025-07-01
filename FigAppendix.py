@@ -717,7 +717,7 @@ if __name__ == "__main__":
         'Transformer': [23, 17, 1, 0]   # same order
     }
     
-    output_base_dir = "run_predictions_RCOND_FINAL"
+    output_base_dir = "scripts/activation_analysis/run_predictions_RCOND_FINAL"
     plot_output_dir = "grid_plots_extended"
     target_checkpoint = "last"
     target_layer = "combined"

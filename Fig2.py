@@ -614,7 +614,7 @@ if __name__ == "__main__":
         {'name': 'TomQA', 'gt_run': ("20241205175736", 17), 'models': [("Transformer", ("20241205175736", 17)), ("LSTM", ("20241121152808", 49))]},
     ]
 
-    output_base_dir = "run_predictions_RCOND_FINAL"
+    output_base_dir = "scripts/activation_analysis/run_predictions_RCOND_FINAL"
     plot_output_dir = "grid_plots_markov_new"
     target_checkpoint = "last"
     target_layer = "combined"
