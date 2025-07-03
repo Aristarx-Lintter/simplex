@@ -162,8 +162,7 @@ belief_regression_results/
 │   ├── checkpoint_0.joblib            # First checkpoint results
 │   ├── checkpoint_{final}.joblib      # Final checkpoint results
 │   ├── markov3_checkpoint_0.joblib    # Markov results for first checkpoint
-│   └── markov3_checkpoint_{final}.joblib # Markov results for final checkpoint
-└── ...                                # Additional runs
+│   └── markov3_checkpoint_{final}.joblib # Markov results for final 
 ```
 
 ## Usage
@@ -175,6 +174,45 @@ To reproduce the analysis:
 3. Adjust configuration parameters at the top of the script if needed:
    - `DEVICE`: Set to 'cuda' or 'mps' for GPU acceleration
    - `ONLY_INITIAL_AND_FINAL`: Set to False to process all checkpoints
-4. Run: `python scripts/activation_analysis/run_regression_analysis.py`
+4. Run: `uv run python -m scripts/activation_analysis/run_regression_analysis.py`
 
 The script will process all sweep/run pairs defined in `sweep_run_pairs` and save results to the `belief_regression_results` directory.
+
+## Markov Approximation Algorithm
+
+The codebase implements a Markov approximation algorithm to create classical baseline models for comparison with neural network performance. This algorithm is central to understanding how well neural networks learn to represent belief states compared to interpretable classical models.
+
+### Algorithm Overview
+
+The Markov approximation algorithm takes a Generalized Hidden Markov Model (GHMM) and creates a finite-order Markov chain that approximates the original process. This approximation captures temporal dependencies up to a specified history length (the Markov order).
+
+### Core Implementation
+
+The main algorithm is implemented in `epsilon_transformers/process/GHMM.py:markov_approximation()` and works as follows:
+
+1. **State Space Construction** (`epsilon_transformers/process/GHMM.py:234-250`):
+   - Generates all possible token sequences of length equal to the Markov order
+   - Filters sequences by their probability under the original GHMM
+   - Only retains sequences with probability > `min_state_prob` (default: 1e-13)
+   - Each retained sequence becomes a state in the Markov approximation
+
+2. **Transition Matrix Computation** (`epsilon_transformers/process/GHMM.py:253-285`):
+   - For each state (representing a history), computes transition probabilities to successor states
+   - A transition from state `s1` to state `s2` exists if:
+     - `s1[1:] == s2[:-1]` (sequences overlap appropriately)
+     - The transition probability is computed as: `P(s2) / P(s1[:-1])`
+   - Filters out transitions with probability < 1e-9 for numerical stability
+
+### Mathematical Formulation
+
+For a GHMM with transition tensor `T(a, h', h)` (probability of transitioning from hidden state `h` to `h'` while emitting symbol `a`), the Markov approximation of order `k` works as follows:
+
+1. **State Definition**: Each state represents a sequence `[a₁, a₂, ..., aₖ]`
+
+2. **Transition Probability**: For sequences `s = [a₁, ..., aₖ]` and `s' = [a₂, ..., aₖ, aₖ₊₁]`:
+   ```
+   P(s → s') = P(s') / P([a₁, ..., aₖ₋₁])
+   ```
+   where probabilities are computed using the original GHMM dynamics
+
+3. **Belief States**: For a path through the Markov chain, the belief state is the posterior distribution over the original hidden states given the observed sequence

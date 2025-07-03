@@ -12,30 +12,19 @@ optimal mappings between activations and theoretical belief states.
 # Configuration
 output_dir = "belief_regression_results"
 N_SPLITS = 10  # K-fold cross-validation splits
-DEVICE = 'cpu'  # Change to 'cuda' or 'mps' if available
+DEVICE = 'cpu'  # Device for data extraction and tensor storage
+REGRESSION_DEVICE = 'mps'  # Device for RegressionAnalyzer (set to 'cpu' or 'cuda' if no MPS available)
 RANDOM_STATE = 42
 ONLY_INITIAL_AND_FINAL = True  # Process only first and last checkpoints
 
 sweep_run_pairs = [
-    # Mess3
-    ("20241121152808", 55),  # LSTM
-    ("20241205175736", 23),  # Transformer
-    ("20241121152808", 63),  # GRU
-    ("20241121152808", 71),  # RNN
-
-    # FRDN (AKA Fanizza)
-    ("20241121152808", 53),  # LSTM
-    ("20250422023003", 1),  # Transformer
-    ("20241121152808", 61),  # GRU
-    ("20241121152808", 69),  # RNN
-
-    # Bloch Walk Process (AKA Tom Quantum A)
-    ("20241121152808", 49),  # LSTM
-    ("20241205175736", 17),  # Transformer
+    # Bloch Walk Process (AKA Tom Quantum A) - Only missing ones
+    # ("20241121152808", 49),  # LSTM
+   #("20241205175736", 17),  # Transformer
     ("20241121152808", 57),  # GRU
     ("20241121152808", 65),  # RNN
     
-    # Moon Process (AKA Post Quantum)
+    # Moon Process (AKA Post Quantum) - All missing
     ("20241121152808", 48),  # LSTM
     ("20250421221507", 0),  # Transformer
     ("20241121152808", 56),  # GRU
@@ -67,16 +56,12 @@ from scripts.activation_analysis.regression import (
     run_activation_to_beliefs_regression_kf,
 )
 
-model_data_manager = ModelDataManager(device=DEVICE, use_company_s3=False)
+model_data_manager = ModelDataManager(device=DEVICE, use_company_s3=True)
 belief_generator = BeliefStateGenerator(model_data_manager, device=DEVICE)
-reg_analyzer = RegressionAnalyzer(device=DEVICE, use_efficient_pinv=True)
-s3_loader = S3ModelLoader(use_company_credentials=False)
+reg_analyzer = RegressionAnalyzer(device=REGRESSION_DEVICE, use_efficient_pinv=True)
+s3_loader = S3ModelLoader(use_company_credentials=True)
 
-os.makedirs(output_dir, exist_ok=True) # Create the directory if it doesn't exist
-
-
-# Initialize S3 loader
-# Configure your own S3 credentials before running
+os.makedirs(output_dir, exist_ok=True)
 
 def _combine_layer_activations(nn_acts):
     """Combine activations from all layers into a single tensor, by concatenating them
@@ -463,14 +448,14 @@ for sweep, run_id_int in sweep_run_pairs:
     classical_kf_list = list(classical_kf.split(classical_all_positions))
 
     ground_truth_data = defaultdict(dict) # Keys: ckpt -> layer -> predictions
-    ground_truth_data['probs'] = np.array(dedup_probs)
-    ground_truth_data['beliefs'] = np.array(dedup_beliefs)
+    ground_truth_data['probs'] = dedup_probs.cpu().numpy() if torch.is_tensor(dedup_probs) else np.array(dedup_probs)
+    ground_truth_data['beliefs'] = dedup_beliefs.cpu().numpy() if torch.is_tensor(dedup_beliefs) else np.array(dedup_beliefs)
     ground_truth_data['indices'] = np.array(dedup_indices, dtype=object)
     joblib.dump(ground_truth_data, f'{run_dir}/ground_truth_data.joblib')
 
     classical_ground_truth_data = defaultdict(dict) # Keys: ckpt -> layer -> predictions
-    classical_ground_truth_data['probs'] = np.array(classical_dedup_probs.cpu())
-    classical_ground_truth_data['beliefs'] = np.array(classical_dedup_beliefs.cpu())
+    classical_ground_truth_data['probs'] = classical_dedup_probs.cpu().numpy()
+    classical_ground_truth_data['beliefs'] = classical_dedup_beliefs.cpu().numpy()
     classical_ground_truth_data['indices'] = np.array(classical_dedup_indices, dtype=object)
     joblib.dump(classical_ground_truth_data, f'{run_dir}/markov3_ground_truth_data.joblib')
     
