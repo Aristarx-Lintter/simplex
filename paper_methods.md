@@ -1,6 +1,40 @@
-# Activation Analysis Pipeline Documentation
+# Epsilon-Transformers: Methods and Reproducibility Guide
 
-This document describes the computational pipeline used to generate the activation analysis results presented in our paper on training neural networks on stochastic processes. The analysis is performed by `scripts/activation_analysis/run_regression_analysis.py`, which creates the `belief_regression_results` folder.
+This document describes the computational pipeline used to generate the activation analysis results presented in our paper "Neural networks leverage nominally quantum and post-quantum representations" and provides comprehensive methods for reproducing these results using both internal and public data sources.
+
+## Dataset and Model Access
+
+### Public Dataset
+The complete dataset including trained models and analysis results is publicly available on HuggingFace:
+
+**Repository**: [`SimplexAI/quantum-representations`](https://huggingface.co/datasets/SimplexAI/quantum-representations)
+
+The dataset contains:
+- **16 trained neural network models** (4 architectures × 4 processes)
+- **Complete belief state regression analysis** with k-fold cross-validation results
+- **Model checkpoints** at multiple training stages
+- **Training configurations and loss curves**
+
+### Model Mappings
+
+| Model ID | Architecture | Process | Description |
+|----------|--------------|---------|-------------|
+| 20241121152808_55 | LSTM | Mess3 | LSTM trained on classical process |
+| 20241205175736_23 | Transformer | Mess3 | Transformer trained on classical process |
+| 20241121152808_63 | GRU | Mess3 | GRU trained on classical process |
+| 20241121152808_71 | RNN | Mess3 | RNN trained on classical process |
+| 20241121152808_53 | LSTM | FRDN | LSTM trained on quantum process |
+| 20250422023003_1 | Transformer | FRDN | Transformer trained on quantum process |
+| 20241121152808_61 | GRU | FRDN | GRU trained on quantum process |
+| 20241121152808_69 | RNN | FRDN | RNN trained on quantum process |
+| 20241121152808_49 | LSTM | Bloch Walk | LSTM trained on quantum process |
+| 20241205175736_17 | Transformer | Bloch Walk | Transformer trained on quantum process |
+| 20241121152808_57 | GRU | Bloch Walk | GRU trained on quantum process |
+| 20241121152808_65 | RNN | Bloch Walk | RNN trained on quantum process |
+| 20241121152808_48 | LSTM | Moon Process | LSTM trained on post-quantum process |
+| 20250421221507_0 | Transformer | Moon Process | Transformer trained on post-quantum process |
+| 20241121152808_56 | GRU | Moon Process | GRU trained on post-quantum process |
+| 20241121152808_64 | RNN | Moon Process | RNN trained on post-quantum process |
 
 ## Overview
 
@@ -165,16 +199,131 @@ belief_regression_results/
 │   └── markov3_checkpoint_{final}.joblib # Markov results for final 
 ```
 
+## Reproducibility Workflows
+
+### Option 1: Public Reproduction (Recommended for External Users)
+
+#### Prerequisites
+```bash
+# Install public dependencies
+pip install -r requirements_public.txt
+
+# Or install minimal requirements:
+pip install torch numpy pandas scikit-learn matplotlib huggingface-hub datasets joblib tqdm
+```
+
+#### Generating Paper Figures
+
+**Figure 2: Belief Grid Visualization**
+```bash
+# Use HuggingFace data (automatic download)
+uv run python Fig2.py --data-source huggingface
+
+# Use local data (if available)
+uv run python Fig2.py --data-source local --data-dir path/to/analysis/files
+```
+
+**Figure 3: Multi-Panel Analysis**
+```bash
+uv run python Fig3.py --data-source huggingface --output-dir my_figures/
+```
+
+**Figure 4: Representational Similarity Analysis**
+```bash
+uv run python Fig4.py --data-source huggingface
+```
+
+**Appendix Figures: Extended Model Comparisons**
+```bash
+uv run python FigAppendix.py --data-source huggingface
+```
+
+#### Running Belief State Regression Analysis
+
+For public users who want to reproduce the analysis from scratch:
+
+```bash
+# Run regression analysis using HuggingFace models
+uv run python -m scripts.activation_analysis.run_regression_analysis \
+    --source huggingface \
+    --repo-id SimplexAI/quantum-representations \
+    --output-dir my_analysis_results \
+    --only-final
+
+# Or use the default output directory (saves to 'belief_regression_results')
+uv run python -m scripts.activation_analysis.run_regression_analysis \
+    --source huggingface \
+    --repo-id SimplexAI/quantum-representations
+```
+
+**Note**: The complete regression analysis results are also available directly on HuggingFace at `SimplexAI/quantum-representations` in the `analysis/` directory, so running this analysis locally is optional unless you want to modify parameters or understand the pipeline.
+
+### Option 2: Internal Reproduction (For Authors/Collaborators)
+
+#### Prerequisites
+```bash
+# Install full dependencies
+pip install -r pyproject.toml
+
+# Set up AWS credentials for S3 access
+export COMPANY_AWS_ACCESS_KEY_ID="your_key"
+export COMPANY_AWS_SECRET_ACCESS_KEY="your_secret"
+export COMPANY_AWS_DEFAULT_REGION="us-west-2"
+export COMPANY_S3_BUCKET_NAME="your_bucket"
+```
+
+#### Training Models
+
+**GPU Training (Recommended)**
+```bash
+# Train models using CUDA parallel launcher with configuration files
+
+# RNN experiments (LSTM, GRU, RNN across multiple processes)
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_rnn.yaml
+
+# Transformer experiments
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_tom_quantum_short.yaml
+
+# Other available training configurations:
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_tom_quantum_fan_post.yaml
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_tom_quantum_rnn_short.yaml
+
+# For different learning rates:
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_tom_quantum_rnn_short_lr_1e-2.yaml
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_tom_quantum_rnn_short_lr_1e-4.yaml
+```
+
+**CPU Training (Alternative)**
+```bash
+# For CPU training, first modify the YAML config file to set device: cpu
+# Then use the regular launcher (not cuda_parallel)
+
+# Example: Transformer FRDN experiment on CPU
+uv run python ./scripts/launcher.py --config ./scripts/experiment_config_transformer_frdn.yaml
+
+# RNN experiments on CPU (after changing device: cpu in the YAML)
+uv run python ./scripts/launcher.py --config ./scripts/experiment_config_rnn.yaml
+```
+
+#### Running Analysis
+```bash
+# Use S3 data (internal)
+uv run python scripts/activation_analysis/run_regression_analysis.py --source s3
+
+# Generate figures with local analysis results
+uv run python Fig2.py --data-source local --data-dir scripts/activation_analysis/run_predictions_RCOND_FINAL
+```
+
 ## Usage
 
 To reproduce the analysis:
 
-1. Ensure access to S3 bucket with trained models
-2. Configure your S3 credentials (the script uses `use_company_credentials=False`)
+1. **For Public Users**: Use HuggingFace data source as shown in Option 1 above
+2. **For Internal Users**: Ensure access to S3 bucket with trained models and configure credentials
 3. Adjust configuration parameters at the top of the script if needed:
    - `DEVICE`: Set to 'cuda' or 'mps' for GPU acceleration
    - `ONLY_INITIAL_AND_FINAL`: Set to False to process all checkpoints
-4. Run: `uv run python -m scripts/activation_analysis/run_regression_analysis.py`
+4. Run: `uv run python scripts/activation_analysis/run_regression_analysis.py --source [s3|huggingface]`
 
 The script will process all sweep/run pairs defined in `sweep_run_pairs` and save results to the `belief_regression_results` directory.
 
@@ -216,3 +365,73 @@ For a GHMM with transition tensor `T(a, h', h)` (probability of transitioning fr
    where probabilities are computed using the original GHMM dynamics
 
 3. **Belief States**: For a path through the Markov chain, the belief state is the posterior distribution over the original hidden states given the observed sequence
+
+## Data Access Examples
+
+### Loading Analysis Data
+
+```python
+from scripts.data_manager import DataManager
+
+# Initialize data manager with HuggingFace source
+dm = DataManager(source='huggingface')
+
+# Get analysis files for a specific model
+model_files = dm.get_analysis_files('20241121152808_57')  # GRU Bloch Walk
+print(f"Ground truth: {model_files['ground_truth']}")
+print(f"Checkpoints: {model_files['checkpoints']}")
+
+# Load regression results
+import joblib
+analysis_data = joblib.load(model_files['checkpoints'][0])
+for layer, metrics in analysis_data.items():
+    print(f"Layer {layer} RMSE: {metrics['rmse']}")
+```
+
+### Loading Model Checkpoints
+
+```python
+from scripts.huggingface_loader import HuggingFaceModelLoader
+
+# Initialize HuggingFace model loader
+loader = HuggingFaceModelLoader(repo_id='SimplexAI/quantum-representations')
+
+# Load a specific model
+sweep_id = "20241121152808"
+run_name = "run_57_L4_H64_GRU_uni_tom_quantum"
+checkpoints = loader.list_checkpoints(sweep_id, run_name)
+
+# Load final checkpoint
+model, config = loader.load_checkpoint(sweep_id, run_name, checkpoints[-1])
+print(f"Model config: {config}")
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**HuggingFace Download Errors**
+```bash
+# Clear cache and retry
+rm -rf ~/.cache/huggingface/
+python Fig2.py --data-source huggingface
+```
+
+**Import Errors**
+```bash
+# Ensure scripts directory is in path
+export PYTHONPATH="${PYTHONPATH}:$(pwd)/scripts"
+```
+
+**Memory Issues**
+```bash
+# Use CPU instead of GPU for large models
+python Fig2.py --data-source huggingface --device cpu
+```
+
+### Getting Help
+
+For issues with reproduction:
+1. Check the repository issues
+2. Verify your environment matches `requirements_public.txt`
+3. Ensure HuggingFace dataset access is working

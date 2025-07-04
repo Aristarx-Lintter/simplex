@@ -128,7 +128,7 @@ def _get_plotting_params(experiment_name: str) -> dict:
             'min_alpha': 0.15, 
             'inds_to_plot': [1, 2] 
         })
-    elif 'post_quantum' in name_lower: 
+    elif 'post_quantum' in name_lower or 'moon' in name_lower: 
         params.update({ 
             'point_size': {'truth': 20., 'pred': 10.}, 
             'min_alpha': 0.01, 
@@ -567,7 +567,7 @@ def visualize_belief_grid_with_metrics(
 
     # --- Titles and Labels ---
     cols = ['Ground Truth', 'Transformer', 'LSTM', 'Model Performance']
-    rows = ['Mess3', 'Bloch Walk']
+    rows = [config['name'] for config in plot_config]
     for ax, col in zip(axes[0], cols): 
         ax.set_title(col, fontsize=15)
     for ax, row in zip(axes[:,0], rows): 
@@ -607,26 +607,97 @@ def visualize_belief_grid_with_metrics(
     return fig, axes
 
 
-# Example usage
+# Main execution with command-line interface
 if __name__ == "__main__":
+    import argparse
+    import sys
+    from pathlib import Path
+    
+    # Add scripts directory to path for DataManager import
+    scripts_dir = Path(__file__).parent / 'scripts'
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    
+    try:
+        from data_manager import DataManager
+    except ImportError:
+        print("Warning: DataManager not available. Using local data only.")
+        DataManager = None
+    
+    parser = argparse.ArgumentParser(description="Generate Figure 2: Belief Grid Visualization")
+    parser.add_argument("--data-source", choices=['local', 'huggingface', 'auto'], default='auto',
+                       help="Data source for analysis files")
+    parser.add_argument("--data-dir", type=str, 
+                       default="scripts/activation_analysis/run_predictions_RCOND_FINAL",
+                       help="Local directory containing analysis files")
+    parser.add_argument("--output-dir", type=str, default="Figs",
+                       help="Output directory for plots")
+    parser.add_argument("--checkpoint", type=str, default="last",
+                       help="Target checkpoint ('last' or specific number)")
+    parser.add_argument("--layer", type=str, default="combined",
+                       help="Target layer for analysis")
+    parser.add_argument("--force-download", action="store_true",
+                       help="Force re-download of data files")
+    
+    args = parser.parse_args()
+    
+    # Always use 3-row configuration
     plot_config_grid = [
-        {'name': 'Mess3', 'gt_run': ("20241205175736", 23), 'models': [("Transformer", ("20241205175736", 23)), ("LSTM", ("20241121152808", 55))]},
-        {'name': 'TomQA', 'gt_run': ("20241205175736", 17), 'models': [("Transformer", ("20241205175736", 17)), ("LSTM", ("20241121152808", 49))]},
+        {'name': 'Mess3', 'gt_run': ("20241205175736", 23), 
+         'models': [("Transformer", ("20241205175736", 23)), ("LSTM", ("20241121152808", 55))]},
+        {'name': 'TomQA', 'gt_run': ("20241205175736", 17), 
+         'models': [("Transformer", ("20241205175736", 17)), ("LSTM", ("20241121152808", 49))]},
+        {'name': 'Moon Process', 'gt_run': ("20250421221507", 0), 
+         'models': [("Transformer", ("20250421221507", 0)), ("LSTM", ("20241121152808", 48))]},
     ]
-
-    output_base_dir = "scripts/activation_analysis/run_predictions_RCOND_FINAL"
-    plot_output_dir = "grid_plots_markov_new"
-    target_checkpoint = "last"
-    target_layer = "combined"
-
-    # Call the new function with bar charts
-    fig, axes = visualize_belief_grid_with_metrics(
-        plot_config=plot_config_grid,
-        output_base_dir=output_base_dir,
-        plot_output_dir=plot_output_dir,
-        target_checkpoint=target_checkpoint,
-        target_layer=target_layer,
-        output_filename=f"belief_grid_with_metrics_{target_layer}_{target_checkpoint}.png",
-    )
-
-    plt.show()
+    
+    # Set up data directory based on source with selective downloading
+    if DataManager is not None and args.data_source != 'local':
+        try:
+            dm = DataManager(source=args.data_source, data_dir=args.data_dir)
+            # Extract model IDs and use selective download with force option
+            model_ids = set()
+            for config in plot_config_grid:
+                for model_type, (sweep, run_id) in config.get('models', []):
+                    model_id = f"{sweep}_{run_id}"
+                    model_ids.add(model_id)
+            
+            analysis_dir = dm.download_selective(list(model_ids), force_download=args.force_download)
+            output_base_dir = str(analysis_dir / 'analysis')
+            print(f"Using data from: {output_base_dir}")
+        except Exception as e:
+            print(f"Error setting up DataManager: {e}")
+            print(f"Falling back to local data: {args.data_dir}")
+            output_base_dir = args.data_dir
+    else:
+        output_base_dir = args.data_dir
+        print(f"Using local data from: {output_base_dir}")
+    
+    print(f"Generating belief grid visualization...")
+    print(f"  Data source: {args.data_source}")
+    print(f"  Analysis directory: {output_base_dir}")
+    print(f"  Output directory: {args.output_dir}")
+    print(f"  Target checkpoint: {args.checkpoint}")
+    print(f"  Target layer: {args.layer}")
+    
+    # Generate simple output filename
+    output_filename = "Fig2.png"
+    
+    try:
+        # Call the visualization function
+        fig, axes = visualize_belief_grid_with_metrics(
+            plot_config=plot_config_grid,
+            output_base_dir=output_base_dir,
+            plot_output_dir=args.output_dir,
+            target_checkpoint=args.checkpoint,
+            target_layer=args.layer,
+            output_filename=output_filename,
+        )
+        
+        print(f"✅ Successfully generated: {args.output_dir}/{output_filename}")
+        
+    except Exception as e:
+        print(f"❌ Error generating visualization: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

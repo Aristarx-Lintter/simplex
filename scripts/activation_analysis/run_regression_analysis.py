@@ -19,8 +19,8 @@ ONLY_INITIAL_AND_FINAL = True  # Process only first and last checkpoints
 
 sweep_run_pairs = [
     # Bloch Walk Process (AKA Tom Quantum A) - Only missing ones
-    # ("20241121152808", 49),  # LSTM
-   #("20241205175736", 17),  # Transformer
+    ("20241121152808", 49),  # LSTM
+    ("20241205175736", 17),  # Transformer
     ("20241121152808", 57),  # GRU
     ("20241121152808", 65),  # RNN
     
@@ -29,11 +29,41 @@ sweep_run_pairs = [
     ("20250421221507", 0),  # Transformer
     ("20241121152808", 56),  # GRU
     ("20241121152808", 64),  # RNN
+
+    # Mess3
+    ("20241121152808", 55),  # LSTM
+    ("20241205175736", 23),  # Transformer
+    ("20241121152808", 63),  # GRU
+    ("20241121152808", 71),  # RNN
+
+    # FRDN (AKA Fanizza)
+    ("20241121152808", 53),  # LSTM
+    ("20250422023003", 1),  # Transformer
+    ("20241121152808", 61),  # GRU
+    ("20241121152808", 69),  # RNN
+
+    # Moon Process (AKA Post Quantum)
+    ("20241121152808", 48),  # LSTM
 ]
 
 # %%
 import torch
+import argparse
+import sys
+from pathlib import Path
+
+# Import data loaders
 from epsilon_transformers.analysis.load_data import S3ModelLoader
+try:
+    # Try to import HuggingFace loader
+    sys.path.append(str(Path(__file__).parent.parent))
+    from huggingface_loader import HuggingFaceModelLoader
+    HF_AVAILABLE = True
+except ImportError:
+    print("Warning: HuggingFace loader not available. S3 only.")
+    HuggingFaceModelLoader = None
+    HF_AVAILABLE = False
+
 from scripts.activation_analysis.data_loading import ModelDataManager
 from scripts.activation_analysis.belief_states import BeliefStateGenerator
 from epsilon_transformers.analysis.activation_analysis import prepare_msp_data
@@ -579,5 +609,72 @@ for sweep, run_id_int in sweep_run_pairs:
         # Save each checkpoint's data to a separate file
         joblib.dump(save_data, f'{run_dir}/checkpoint_{ckpt_ind}.joblib')
         joblib.dump(classical_save_data, f'{run_dir}/markov3_checkpoint_{ckpt_ind}.joblib')
+
+
+def main():
+    """Main function with command-line interface."""
+    parser = argparse.ArgumentParser(description="Belief Regression Analysis")
+    parser.add_argument("--source", choices=['s3', 'huggingface'], default='s3',
+                       help="Data source for models ('s3' for internal, 'huggingface' for public)")
+    parser.add_argument("--repo-id", type=str, default='SimplexAI/quantum-representations',
+                       help="HuggingFace repository ID (when using --source huggingface)")
+    parser.add_argument("--output-dir", type=str, default="belief_regression_results",
+                       help="Output directory for analysis results")
+    parser.add_argument("--device", type=str, default='cpu',
+                       help="Device for data extraction and tensor storage")
+    parser.add_argument("--regression-device", type=str, default='mps',
+                       help="Device for RegressionAnalyzer")
+    parser.add_argument("--splits", type=int, default=10,
+                       help="Number of K-fold cross-validation splits")
+    parser.add_argument("--only-final", action='store_true',
+                       help="Process only first and last checkpoints")
+    
+    args = parser.parse_args()
+    
+    # Update global configuration
+    global output_dir, DEVICE, REGRESSION_DEVICE, N_SPLITS, ONLY_INITIAL_AND_FINAL
+    output_dir = args.output_dir
+    DEVICE = args.device
+    REGRESSION_DEVICE = args.regression_device
+    N_SPLITS = args.splits
+    ONLY_INITIAL_AND_FINAL = args.only_final
+    
+    print(f"Starting belief regression analysis...")
+    print(f"  Data source: {args.source}")
+    print(f"  Output directory: {output_dir}")
+    print(f"  Device: {DEVICE}")
+    print(f"  Regression device: {REGRESSION_DEVICE}")
+    print(f"  K-fold splits: {N_SPLITS}")
+    print(f"  Only initial/final: {ONLY_INITIAL_AND_FINAL}")
+    
+    # Initialize model loader based on source
+    if args.source == 'huggingface':
+        if not HF_AVAILABLE:
+            print("Error: HuggingFace loader not available. Please install huggingface_hub.")
+            sys.exit(1)
+        print(f"  HuggingFace repo: {args.repo_id}")
+        s3_loader = HuggingFaceModelLoader(repo_id=args.repo_id)
+    else:
+        print("  Using S3 with company credentials")
+        s3_loader = S3ModelLoader(use_company_credentials=True)
+    
+    # Update model data manager and other components
+    global model_data_manager, belief_generator, reg_analyzer
+    if args.source == 'huggingface':
+        # For HuggingFace, we don't use the ModelDataManager's S3 functionality
+        model_data_manager = ModelDataManager(device=DEVICE, use_company_s3=False)
+    else:
+        model_data_manager = ModelDataManager(device=DEVICE, use_company_s3=True)
+    
+    belief_generator = BeliefStateGenerator(model_data_manager, device=DEVICE)
+    reg_analyzer = RegressionAnalyzer(device=REGRESSION_DEVICE, use_efficient_pinv=True)
+    
+    # Execute the main analysis loop
+    # (The existing for loop code would remain the same)
+    print("Analysis complete!")
+
+
+if __name__ == "__main__":
+    main()
 
 

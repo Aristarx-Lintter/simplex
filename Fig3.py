@@ -1056,14 +1056,55 @@ def plot_rmse_vs_layer_on_ax(ax: plt.Axes, df: pd.DataFrame, checkpoint_id: int 
          ax.text(0.5, 0.5, "No Data Plotted", ha='center', va='center', transform=ax.transAxes, fontsize=9, color='orange')
 
 
-# --- Main Execution Block ---
-if __name__ == "__main__":
+def main():
+    import argparse
+    import sys
+    from pathlib import Path
+    
+    # Add scripts directory to path for DataManager import
+    scripts_dir = Path(__file__).parent / 'scripts'
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    
+    try:
+        from data_manager import DataManager
+    except ImportError:
+        print("Warning: DataManager not available. Using local data only.")
+        DataManager = None
+    
+    parser = argparse.ArgumentParser(description="Generate Figure 3: Multi-Panel Analysis")
+    parser.add_argument("--data-source", choices=['local', 'huggingface', 'auto'], default='auto',
+                       help="Data source for analysis files")
+    parser.add_argument("--data-dir", type=str, 
+                       default="scripts/activation_analysis/run_predictions_RCOND_FINAL",
+                       help="Local directory containing analysis files")
+    parser.add_argument("--output-dir", type=str, default="Figs",
+                       help="Output directory for plots")
+    parser.add_argument("--checkpoint", type=str, default="last",
+                       help="Target checkpoint ('last' or specific number)")
+    parser.add_argument("--layer", type=str, default="combined",
+                       help="Target layer for analysis")
+    
+    args = parser.parse_args()
+    
+    # Set up data directory based on source
+    if DataManager is not None and args.data_source != 'local':
+        try:
+            dm = DataManager(source=args.data_source, data_dir=args.data_dir)
+            analysis_dir = dm.get_analysis_data_dir()
+            output_base_dir = str(analysis_dir)
+            print(f"Using data from: {output_base_dir}")
+        except Exception as e:
+            print(f"Error setting up DataManager: {e}")
+            print(f"Falling back to local data: {args.data_dir}")
+            output_base_dir = args.data_dir
+    else:
+        output_base_dir = args.data_dir
+        print(f"Using local data from: {output_base_dir}")
 
     # --- Configuration ---
-    output_base_dir = "run_predictions_cv"        # Base directory where run folders are
-    output_base_dir = "scripts/activation_analysis/run_predictions_RCOND_FINAL" 
-    plot_output_dir = "combined_figure_output"  # Directory to save the final figure
-    final_figure_filename = "combined_analysis_figure_v2.png" # Output filename
+    plot_output_dir = args.output_dir  # Directory to save the final figure
+    final_figure_filename = "Fig3.png" # Output filename
 
     # Layer configuration
     layer_name_map = { # Map internal names to plottable names
@@ -1320,21 +1361,21 @@ if __name__ == "__main__":
     mpl.rcParams['pdf.fonttype'] = 42  # Type 42 (TrueType) for PDF export
     mpl.rcParams['svg.hashsalt'] = None  # Ensure reproducible SVG output
     
-    # Save as high-res PNG for top row visualization panels
+    # Save as high-res PNG
     full_output_path = os.path.join(plot_output_dir, final_figure_filename)
+    os.makedirs(plot_output_dir, exist_ok=True)
     plt.savefig(full_output_path, dpi=300, bbox_inches='tight')
-    print(f"\nCombined figure saved to: {full_output_path}")
+    print(f"\nFig3 saved to: {full_output_path}")
     
-    # Save in vector format (SVG) optimized for Figma editing
+    # Save in vector format (SVG) 
     vector_output_path = os.path.join(plot_output_dir, final_figure_filename.replace('.png', '.svg'))
     plt.savefig(vector_output_path, format='svg', bbox_inches='tight')
-    print(f"Vector version saved to: {vector_output_path}")
-    
-    # Also save PDF as backup vector format
-    pdf_output_path = os.path.join(plot_output_dir, final_figure_filename.replace('.png', '.pdf'))
-    plt.savefig(pdf_output_path, format='pdf', bbox_inches='tight')
-    print(f"PDF backup saved to: {pdf_output_path}")
+    print(f"SVG version saved to: {vector_output_path}")
 
     plt.show()
 
     print("\n--- Combined Plotting Script Finished ---")
+
+
+if __name__ == "__main__":
+    main()

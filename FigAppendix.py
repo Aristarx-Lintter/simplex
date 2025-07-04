@@ -700,9 +700,41 @@ def visualize_belief_grid_with_metrics(
     return fig, axes
 
 
-# Extended usage with all experiments and model types
-if __name__ == "__main__":
-    # Define all experiments with their ground truth runs (back to original)
+def main():
+    import argparse
+    import sys
+    from pathlib import Path
+    
+    # Add scripts directory to path for DataManager import
+    scripts_dir = Path(__file__).parent / 'scripts'
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    
+    try:
+        from data_manager import DataManager
+    except ImportError:
+        print("Warning: DataManager not available. Using local data only.")
+        DataManager = None
+    
+    parser = argparse.ArgumentParser(description="Generate Appendix Figure: Extended Model Comparison")
+    parser.add_argument("--data-source", choices=['local', 'huggingface', 'auto'], default='auto',
+                       help="Data source for analysis files")
+    parser.add_argument("--data-dir", type=str, 
+                       default="scripts/activation_analysis/run_predictions_RCOND_FINAL",
+                       help="Local directory containing analysis files")
+    parser.add_argument("--output-dir", type=str, default="Figs",
+                       help="Output directory for plots")
+    parser.add_argument("--checkpoint", type=str, default="last",
+                       help="Target checkpoint ('last' or specific number)")
+    parser.add_argument("--layer", type=str, default="combined",
+                       help="Target layer for analysis")
+    parser.add_argument("--model-type", type=str, default="all",
+                       choices=['all', 'Transformer', 'LSTM', 'GRU', 'RNN'],
+                       help="Which model type to generate (default: all)")
+    
+    args = parser.parse_args()
+    
+    # Define all experiments with their ground truth runs
     experiments = [
         {'name': 'Mess3', 'gt_run': ("20241205175736", 23)},
         {'name': 'TomQA', 'gt_run': ("20241205175736", 17)},
@@ -717,12 +749,61 @@ if __name__ == "__main__":
         'Transformer': [23, 17, 1, 0]   # same order
     }
     
-    output_base_dir = "belief_regression_results"
-    plot_output_dir = "grid_plots_extended_new"
-    target_checkpoint = "last"
-    target_layer = "combined"
+    # Filter model configs based on user selection
+    if args.model_type != 'all':
+        model_configs = {args.model_type: model_configs[args.model_type]}
+    
+    target_checkpoint = args.checkpoint
+    target_layer = args.layer
+    
+    # Create combined plot config for selective downloading
+    all_plot_configs = []
+    for model_type, run_ids in model_configs.items():
+        for i, exp in enumerate(experiments):
+            exp_name = exp['name']
+            gt_run = exp['gt_run']
+            
+            # Determine the folder for this model type
+            if model_type == 'Transformer':
+                model_folder = gt_run[0]
+            else:
+                model_folder = "20241121152808"
+            
+            # Create model entry for this experiment
+            model_run_id = run_ids[i]
+            model_entry = (model_type, (model_folder, model_run_id))
+            
+            all_plot_configs.append({
+                'name': exp_name,
+                'gt_run': gt_run,
+                'models': [model_entry]
+            })
+    
+    # Set up data directory based on source with selective downloading
+    if DataManager is not None and args.data_source != 'local':
+        try:
+            dm = DataManager(source=args.data_source, data_dir=args.data_dir)
+            analysis_dir = dm.get_analysis_data_for_figure(all_plot_configs)
+            output_base_dir = str(analysis_dir)
+            print(f"Using data from: {output_base_dir}")
+        except Exception as e:
+            print(f"Error setting up DataManager: {e}")
+            print(f"Falling back to local data: {args.data_dir}")
+            output_base_dir = args.data_dir
+    else:
+        output_base_dir = args.data_dir
+        print(f"Using local data from: {output_base_dir}")
+    
+    print(f"Generating appendix figures...")
+    print(f"  Data source: {args.data_source}")
+    print(f"  Analysis directory: {output_base_dir}")
+    print(f"  Output directory: {args.output_dir}")
+    print(f"  Target checkpoint: {args.checkpoint}")
+    print(f"  Target layer: {args.layer}")
+    print(f"  Model types: {list(model_configs.keys())}")
     
     # Generate a separate figure for each model type
+    generated_files = []
     for model_type, run_ids in model_configs.items():
         print(f"\n=== Generating figure for {model_type} ===")
         
@@ -748,25 +829,34 @@ if __name__ == "__main__":
                 'models': [model_entry]  # Single model for cleaner visualization
             })
         
+        # Generate simple output filename
+        output_filename = f"FigAppendix_{model_type}.png"
+        
         # Generate the figure for this model type
-        fig, axes = visualize_belief_grid_with_metrics(
-            plot_config=plot_config,
-            output_base_dir=output_base_dir,
-            plot_output_dir=plot_output_dir,
-            target_checkpoint=target_checkpoint,
-            target_layer=target_layer,
-            output_filename=f"belief_grid_{model_type}_extended_{target_layer}_{target_checkpoint}.png",
-        )
-        
-        # Optionally show the figure (comment out if running in batch)
-        # plt.show()
-        
-        # Close the figure to free memory
-        plt.close(fig)
+        try:
+            fig, axes = visualize_belief_grid_with_metrics(
+                plot_config=plot_config,
+                output_base_dir=output_base_dir,
+                plot_output_dir=args.output_dir,
+                target_checkpoint=target_checkpoint,
+                target_layer=target_layer,
+                output_filename=output_filename,
+            )
+            
+            generated_files.append(output_filename)
+            print(f"✅ Generated: {args.output_dir}/{output_filename}")
+            
+            # Close the figure to free memory
+            plt.close(fig)
+            
+        except Exception as e:
+            print(f"❌ Error generating {model_type} figure: {e}")
     
-    print(f"\nAll figures saved to {plot_output_dir}/")
-    print("Generated files:")
-    for model_type in model_configs.keys():
-        print(f"  - belief_grid_{model_type}_extended_{target_layer}_{target_checkpoint}.png")
-        print(f"  - belief_grid_{model_type}_extended_{target_layer}_{target_checkpoint}.svg")
-        print(f"  - belief_grid_{model_type}_extended_{target_layer}_{target_checkpoint}.pdf")
+    print(f"\nAppendix figure generation complete!")
+    print(f"Generated {len(generated_files)} figures in {args.output_dir}/")
+    for filename in generated_files:
+        print(f"  - {filename}")
+
+
+if __name__ == "__main__":
+    main()

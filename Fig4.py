@@ -257,198 +257,256 @@ def plot_single_similarity_subplot(ax_joint, # Removed marginal axes
 # Main Script Logic for Creating the Grid Figure (No Marginals)
 # =============================================================================
 
-RUN_DIR = "scripts/activation_analysis/run_predictions_RCOND_FINAL" # Make sure this path is correct
-MAXSIZE = 1000 # Keep sampling for efficiency
+def main():
+    import argparse
+    import sys
+    from pathlib import Path
+    
+    # Add scripts directory to path for DataManager import
+    scripts_dir = Path(__file__).parent / 'scripts'
+    if str(scripts_dir) not in sys.path:
+        sys.path.insert(0, str(scripts_dir))
+    
+    try:
+        from data_manager import DataManager
+    except ImportError:
+        print("Warning: DataManager not available. Using local data only.")
+        DataManager = None
+    
+    parser = argparse.ArgumentParser(description="Generate Figure 4: Representational Similarity Analysis")
+    parser.add_argument("--data-source", choices=['local', 'huggingface', 'auto'], default='auto',
+                       help="Data source for analysis files")
+    parser.add_argument("--data-dir", type=str, 
+                       default="scripts/activation_analysis/run_predictions_RCOND_FINAL",
+                       help="Local directory containing analysis files")
+    parser.add_argument("--output-dir", type=str, default="Figs",
+                       help="Output directory for plots")
+    parser.add_argument("--checkpoint", type=str, default="last",
+                       help="Target checkpoint ('last' or specific number)")
+    parser.add_argument("--layer", type=str, default="combined",
+                       help="Target layer for analysis")
+    
+    args = parser.parse_args()
+    
+    # Set up data directory based on source
+    if DataManager is not None and args.data_source != 'local':
+        try:
+            dm = DataManager(source=args.data_source, data_dir=args.data_dir)
+            analysis_dir = dm.get_analysis_data_dir()
+            RUN_DIR = str(analysis_dir)
+            print(f"Using data from: {RUN_DIR}")
+        except Exception as e:
+            print(f"Error setting up DataManager: {e}")
+            print(f"Falling back to local data: {args.data_dir}")
+            RUN_DIR = args.data_dir
+    else:
+        RUN_DIR = args.data_dir
+        print(f"Using local data from: {RUN_DIR}")
 
-# Define experiment folders
-transformer_folders = {
-    "Post-Quantum": "20250421221507_0", "MESS3": "20241205175736_23",
-    "Bloch Walk": "20241205175736_17", "FRDN": "20250422023003_1"
-}
-lstm_folders = {
-    "Post-Quantum": "20241121152808_48", "MESS3": "20241121152808_55",
-    "Bloch Walk": "20241121152808_49", "FRDN": "20241121152808_53"
-}
+    MAXSIZE = 1000 # Keep sampling for efficiency
 
-# Define the order of processes for columns - FRDN commented out, reordered
-# process_order = ["Post-Quantum", "MESS3", "Bloch Walk", "FRDN"]
-process_order = ["MESS3", "Bloch Walk", "Post-Quantum"]  # New order without FRDN
+    # Define experiment folders
+    transformer_folders = {
+        "Post-Quantum": "20250421221507_0", "MESS3": "20241205175736_23",
+        "Bloch Walk": "20241205175736_17", "FRDN": "20250422023003_1"
+    }
+    lstm_folders = {
+        "Post-Quantum": "20241121152808_48", "MESS3": "20241121152808_55",
+        "Bloch Walk": "20241121152808_49", "FRDN": "20241121152808_53"
+    }
 
-# Process display names with type labels
-process_display_names = {
-    "MESS3": "Mess3 Process\nClassical",
-    "Bloch Walk": "Bloch Walk Process\nQuantum", 
-    "Post-Quantum": "Moon Process\nPost-Quantum"
-}
-model_types = ["Transformer", "LSTM"]
-model_folders = {"Transformer": transformer_folders, "LSTM": lstm_folders}
+    # Define the order of processes for columns - FRDN commented out, reordered
+    # process_order = ["Post-Quantum", "MESS3", "Bloch Walk", "FRDN"]
+    process_order = ["MESS3", "Bloch Walk", "Post-Quantum"]  # New order without FRDN
 
-print(f'Starting processing and plotting grid (sampling to {MAXSIZE})...')
+    # Process display names with type labels
+    process_display_names = {
+        "MESS3": "Mess3 Process\nClassical",
+        "Bloch Walk": "Bloch Walk Process\nQuantum", 
+        "Post-Quantum": "Moon Process\nPost-Quantum"
+    }
+    model_types = ["Transformer", "LSTM"]
+    model_folders = {"Transformer": transformer_folders, "LSTM": lstm_folders}
 
-# --- Create the main figure and GridSpec layout ---
-# Adjusted figure size for 3 columns instead of 4
-fig = plt.figure(figsize=(11, 7.5))  # Reduced width from 14 to 11
+    print(f'Starting processing and plotting grid (sampling to {MAXSIZE})...')
 
-# Outer grid - now 2x3 instead of 2x4
-outer_gs = gridspec.GridSpec(2, 3, figure=fig, hspace=0.25, wspace=0.15) # 3 columns now
+    # --- Create the main figure and GridSpec layout ---
+    # Adjusted figure size for 3 columns instead of 4
+    fig = plt.figure(figsize=(11, 7.5))  # Reduced width from 14 to 11
 
-# Use a consistent style
-plt.style.use('seaborn-v0_8-whitegrid')
+    # Outer grid - now 2x3 instead of 2x4
+    outer_gs = gridspec.GridSpec(2, 3, figure=fig, hspace=0.25, wspace=0.15) # 3 columns now
 
-# Store axes for sharing limits - now 2x3
-all_joint_axes = np.empty((2, 3), dtype=object)
+    # Use a consistent style
+    plt.style.use('seaborn-v0_8-whitegrid')
 
-# --- Loop through models (rows) and processes (columns) ---
-for r, model_type in enumerate(model_types):
-    print(f"\n--- Processing {model_type} Models ---")
-    folders = model_folders[model_type]
+    # Store axes for sharing limits - now 2x3
+    all_joint_axes = np.empty((2, 3), dtype=object)
 
-    for c, process_name in enumerate(process_order):
-        print(f"Processing: {model_type} - {process_name}")
-        folder = folders.get(process_name)
+    # --- Loop through models (rows) and processes (columns) ---
+    for r, model_type in enumerate(model_types):
+        print(f"\n--- Processing {model_type} Models ---")
+        folders = model_folders[model_type]
+
+        for c, process_name in enumerate(process_order):
+            print(f"Processing: {model_type} - {process_name}")
+            folder = folders.get(process_name)
+            
+            # Get display name for this process
+            display_name = process_display_names.get(process_name, process_name)
+
+            # --- Create Axes (No Inner GridSpec needed) ---
+            ax_joint = fig.add_subplot(outer_gs[r, c])
+            all_joint_axes[r, c] = ax_joint # Store axis
+
+            if folder is None:
+                print(f"  Folder not defined for {model_type} - {process_name}, skipping.")
+                ax_joint.text(0.5, 0.5, 'No Folder', ha='center', va='center', transform=ax_joint.transAxes, color='gray', fontsize=10)
+                # Only show title if it's the top row
+                if r == 0:
+                     ax_joint.set_title(display_name, fontsize=12, pad=10) # Use display name
+                ax_joint.tick_params(labelbottom=False, labelleft=False)
+                # Turn off spines for empty plots
+                for spine in ax_joint.spines.values():
+                    spine.set_visible(False)
+                continue
+
+
+            # --- Load Data ---
+            resid_markov, gt_beliefs_markov, _ = load_and_process_data(RUN_DIR, folder, True)
+            resid_nonmarkov, gt_beliefs_nonmarkov, _ = load_and_process_data(RUN_DIR, folder, False)
+
+            if resid_markov is None or resid_nonmarkov is None:
+                 print(f"  Skipping plot for {model_type} - {process_name} due to data loading errors.")
+                 ax_joint.text(0.5, 0.5, 'Load Error', ha='center', va='center', transform=ax_joint.transAxes, color='red', fontsize=10)
+                 if r == 0:
+                     ax_joint.set_title(display_name, fontsize=12, pad=10) # Use display name
+                 ax_joint.tick_params(labelbottom=False, labelleft=False)
+                 for spine in ax_joint.spines.values():
+                    spine.set_visible(False)
+                 continue
+
+            # --- Sampling ---
+            if len(resid_markov) > MAXSIZE:
+                # print(f'  Sampling {MAXSIZE} points from Markov3 data.') # Less verbose
+                idx_m = np.random.choice(len(resid_markov), MAXSIZE, replace=False)
+                resid_markov, gt_beliefs_markov = resid_markov[idx_m], gt_beliefs_markov[idx_m]
+            if len(resid_nonmarkov) > MAXSIZE:
+                # print(f'  Sampling {MAXSIZE} points from Non-Markov data.') # Less verbose
+                idx_nm = np.random.choice(len(resid_nonmarkov), MAXSIZE, replace=False)
+                resid_nonmarkov, gt_beliefs_nonmarkov = resid_nonmarkov[idx_nm], gt_beliefs_nonmarkov[idx_nm]
+
+            # --- Calculate Cosine Similarities ---
+            gt_sim_m = calculate_cosine_similarities(gt_beliefs_markov)
+            res_sim_m = calculate_cosine_similarities(resid_markov)
+            gt_sim_nm = calculate_cosine_similarities(gt_beliefs_nonmarkov)
+            res_sim_nm = calculate_cosine_similarities(resid_nonmarkov)
+
+            if gt_sim_m is None or res_sim_m is None or gt_sim_nm is None or res_sim_nm is None:
+                print(f"  Skipping plot for {model_type} - {process_name} due to similarity calculation errors.")
+                ax_joint.text(0.5, 0.5, 'Sim Error', ha='center', va='center', transform=ax_joint.transAxes, color='red', fontsize=10)
+                if r == 0:
+                    ax_joint.set_title(display_name, fontsize=12, pad=10) # Use display name
+                ax_joint.tick_params(labelbottom=False, labelleft=False)
+                for spine in ax_joint.spines.values():
+                    spine.set_visible(False)
+                continue
+
+            # --- Plot on the created axes ---
+            show_title = (r == 0) # Show title only for the top row (r=0)
+            show_xlabel = (r == 1) # Show x-label only for the bottom row
+            show_ylabel = (c == 0) # Show y-label only for the left column
+            show_xticklabels = (r == 1) # Show x-ticks only for the bottom row
+            show_yticklabels = (c == 0) # Show y-ticks only for the left column
+
+            plot_single_similarity_subplot(ax_joint, # Pass only the main axis
+                                           gt_sim_m, res_sim_m,
+                                           gt_sim_nm, res_sim_nm,
+                                           display_name,  # Use display name instead
+                                           bins=50,
+                                           show_title=show_title, # Control title visibility
+                                           show_xlabel=show_xlabel,
+                                           show_ylabel=show_ylabel,
+                                           show_xticklabels=show_xticklabels,
+                                           show_yticklabels=show_yticklabels)
+
+    # --- Share x axes within columns only ---
+    # Process each column separately
+    for c in range(all_joint_axes.shape[1]):  # Iterate through columns
+        # Find column-specific x limits
+        col_xmin, col_xmax = np.inf, -np.inf
+        col_has_valid_axes = False
         
-        # Get display name for this process
-        display_name = process_display_names.get(process_name, process_name)
-
-        # --- Create Axes (No Inner GridSpec needed) ---
-        ax_joint = fig.add_subplot(outer_gs[r, c])
-        all_joint_axes[r, c] = ax_joint # Store axis
-
-        if folder is None:
-            print(f"  Folder not defined for {model_type} - {process_name}, skipping.")
-            ax_joint.text(0.5, 0.5, 'No Folder', ha='center', va='center', transform=ax_joint.transAxes, color='gray', fontsize=10)
-            # Only show title if it's the top row
-            if r == 0:
-                 ax_joint.set_title(display_name, fontsize=12, pad=10) # Use display name
-            ax_joint.tick_params(labelbottom=False, labelleft=False)
-            # Turn off spines for empty plots
-            for spine in ax_joint.spines.values():
-                spine.set_visible(False)
-            continue
-
-
-        # --- Load Data ---
-        resid_markov, gt_beliefs_markov, _ = load_and_process_data(RUN_DIR, folder, True)
-        resid_nonmarkov, gt_beliefs_nonmarkov, _ = load_and_process_data(RUN_DIR, folder, False)
-
-        if resid_markov is None or resid_nonmarkov is None:
-             print(f"  Skipping plot for {model_type} - {process_name} due to data loading errors.")
-             ax_joint.text(0.5, 0.5, 'Load Error', ha='center', va='center', transform=ax_joint.transAxes, color='red', fontsize=10)
-             if r == 0:
-                 ax_joint.set_title(display_name, fontsize=12, pad=10) # Use display name
-             ax_joint.tick_params(labelbottom=False, labelleft=False)
-             for spine in ax_joint.spines.values():
-                spine.set_visible(False)
-             continue
-
-        # --- Sampling ---
-        if len(resid_markov) > MAXSIZE:
-            # print(f'  Sampling {MAXSIZE} points from Markov3 data.') # Less verbose
-            idx_m = np.random.choice(len(resid_markov), MAXSIZE, replace=False)
-            resid_markov, gt_beliefs_markov = resid_markov[idx_m], gt_beliefs_markov[idx_m]
-        if len(resid_nonmarkov) > MAXSIZE:
-            # print(f'  Sampling {MAXSIZE} points from Non-Markov data.') # Less verbose
-            idx_nm = np.random.choice(len(resid_nonmarkov), MAXSIZE, replace=False)
-            resid_nonmarkov, gt_beliefs_nonmarkov = resid_nonmarkov[idx_nm], gt_beliefs_nonmarkov[idx_nm]
-
-        # --- Calculate Cosine Similarities ---
-        gt_sim_m = calculate_cosine_similarities(gt_beliefs_markov)
-        res_sim_m = calculate_cosine_similarities(resid_markov)
-        gt_sim_nm = calculate_cosine_similarities(gt_beliefs_nonmarkov)
-        res_sim_nm = calculate_cosine_similarities(resid_nonmarkov)
-
-        if gt_sim_m is None or res_sim_m is None or gt_sim_nm is None or res_sim_nm is None:
-            print(f"  Skipping plot for {model_type} - {process_name} due to similarity calculation errors.")
-            ax_joint.text(0.5, 0.5, 'Sim Error', ha='center', va='center', transform=ax_joint.transAxes, color='red', fontsize=10)
-            if r == 0:
-                ax_joint.set_title(display_name, fontsize=12, pad=10) # Use display name
-            ax_joint.tick_params(labelbottom=False, labelleft=False)
-            for spine in ax_joint.spines.values():
-                spine.set_visible(False)
-            continue
-
-        # --- Plot on the created axes ---
-        show_title = (r == 0) # Show title only for the top row (r=0)
-        show_xlabel = (r == 1) # Show x-label only for the bottom row
-        show_ylabel = (c == 0) # Show y-label only for the left column
-        show_xticklabels = (r == 1) # Show x-ticks only for the bottom row
-        show_yticklabels = (c == 0) # Show y-ticks only for the left column
-
-        plot_single_similarity_subplot(ax_joint, # Pass only the main axis
-                                       gt_sim_m, res_sim_m,
-                                       gt_sim_nm, res_sim_nm,
-                                       display_name,  # Use display name instead
-                                       bins=50,
-                                       show_title=show_title, # Control title visibility
-                                       show_xlabel=show_xlabel,
-                                       show_ylabel=show_ylabel,
-                                       show_xticklabels=show_xticklabels,
-                                       show_yticklabels=show_yticklabels)
-
-# --- Share x axes within columns only ---
-# Process each column separately
-for c in range(all_joint_axes.shape[1]):  # Iterate through columns
-    # Find column-specific x limits
-    col_xmin, col_xmax = np.inf, -np.inf
-    col_has_valid_axes = False
-    
-    # First pass: determine column-specific x limits
-    for r in range(all_joint_axes.shape[0]):  # Iterate through rows in this column
-        ax = all_joint_axes[r, c]
-        if ax is not None and (ax.collections or ax.lines):
-            col_has_valid_axes = True
-            xmin, xmax = ax.get_xlim()
-            col_xmin = min(col_xmin, xmin)
-            col_xmax = max(col_xmax, xmax)
-    
-    # Second pass: apply column-specific x limits
-    if col_has_valid_axes and np.isfinite(col_xmin):
-        print(f"Column {c}: Applying shared x limits: [{col_xmin:.2f}, {col_xmax:.2f}]")
-        for r in range(all_joint_axes.shape[0]):
+        # First pass: determine column-specific x limits
+        for r in range(all_joint_axes.shape[0]):  # Iterate through rows in this column
             ax = all_joint_axes[r, c]
             if ax is not None and (ax.collections or ax.lines):
-                ax.set_xlim(col_xmin, col_xmax)
-    elif col_has_valid_axes:
-        print(f"Column {c}: No valid x limits found, not sharing x axis.")
+                col_has_valid_axes = True
+                xmin, xmax = ax.get_xlim()
+                col_xmin = min(col_xmin, xmin)
+                col_xmax = max(col_xmax, xmax)
+        
+        # Second pass: apply column-specific x limits
+        if col_has_valid_axes and np.isfinite(col_xmin):
+            print(f"Column {c}: Applying shared x limits: [{col_xmin:.2f}, {col_xmax:.2f}]")
+            for r in range(all_joint_axes.shape[0]):
+                ax = all_joint_axes[r, c]
+                if ax is not None and (ax.collections or ax.lines):
+                    ax.set_xlim(col_xmin, col_xmax)
+        elif col_has_valid_axes:
+            print(f"Column {c}: No valid x limits found, not sharing x axis.")
 
 
-# --- Add Row Labels ---
-row_label_kwargs = dict(fontsize=16, fontweight='bold', rotation=90, ha='right', va='center') # Larger
-fig.text(0.02, 0.7, model_types[0], **row_label_kwargs) # Adjusted x pos slightly
-fig.text(0.02, 0.3, model_types[1], **row_label_kwargs) # Adjusted x pos slightly
+    # --- Add Row Labels ---
+    row_label_kwargs = dict(fontsize=16, fontweight='bold', rotation=90, ha='right', va='center') # Larger
+    fig.text(0.02, 0.7, model_types[0], **row_label_kwargs) # Adjusted x pos slightly
+    fig.text(0.02, 0.3, model_types[1], **row_label_kwargs) # Adjusted x pos slightly
 
 
-# --- Add Shared Legend Below Grid ---
-legend_elements = [Line2D([0], [0], marker='s', color='w', label='Classical Approximation\nMarkov-Order 3',
-                          markerfacecolor='#0072B2', markersize=12), # Blue, Larger marker
-                   Line2D([0], [0], marker='s', color='w', label='Full Generator',
-                          markerfacecolor='#D55E00', markersize=12)] # Orange, Larger marker
+    # --- Add Shared Legend Below Grid ---
+    legend_elements = [Line2D([0], [0], marker='s', color='w', label='Classical Approximation\nMarkov-Order 3',
+                              markerfacecolor='#0072B2', markersize=12), # Blue, Larger marker
+                       Line2D([0], [0], marker='s', color='w', label='Full Generator',
+                              markerfacecolor='#D55E00', markersize=12)] # Orange, Larger marker
 
-fig.legend(handles=legend_elements, loc='lower center',
-           bbox_to_anchor=(0.5, -0.02), # Moved down slightly for multi-line
-           ncol=2, frameon=False, fontsize=12) # Slightly smaller for multi-line
+    fig.legend(handles=legend_elements, loc='lower center',
+               bbox_to_anchor=(0.5, -0.02), # Moved down slightly for multi-line
+               ncol=2, frameon=False, fontsize=12) # Slightly smaller for multi-line
 
 
-# --- Overall Figure Title ---
-fig.suptitle('Representational Similarity Analysis', fontsize=22, y=0.98, weight='light') # More elegant title
+    # --- Overall Figure Title ---
+    fig.suptitle('Representational Similarity Analysis', fontsize=22, y=0.98, weight='light') # More elegant title
 
-# --- Final Adjustments ---
-# Adjust spacing - adjusted for legend and beautification
-fig.subplots_adjust(left=0.08, bottom=0.17, right=0.97, top=0.91) # Adjusted for multi-line legend
+    # --- Final Adjustments ---
+    # Adjust spacing - adjusted for legend and beautification
+    fig.subplots_adjust(left=0.08, bottom=0.17, right=0.97, top=0.91) # Adjusted for multi-line legend
 
-# Set style parameters before saving
-plt.rcParams['svg.fonttype'] = 'none'
-plt.rcParams['font.family'] = 'Arial'
-plt.rcParams['font.size'] = 10
-plt.rcParams['axes.labelsize'] = 11
-plt.rcParams['axes.titlesize'] = 12
-plt.rcParams['xtick.labelsize'] = 10
-plt.rcParams['ytick.labelsize'] = 10
-plt.rcParams['axes.linewidth'] = 0.8  # Thinner axes
-plt.rcParams['axes.edgecolor'] = '#333333'  # Darker gray axes
+    # Set style parameters before saving
+    plt.rcParams['svg.fonttype'] = 'none'
+    plt.rcParams['font.family'] = 'Arial'
+    plt.rcParams['font.size'] = 10
+    plt.rcParams['axes.labelsize'] = 11
+    plt.rcParams['axes.titlesize'] = 12
+    plt.rcParams['xtick.labelsize'] = 10
+    plt.rcParams['ytick.labelsize'] = 10
+    plt.rcParams['axes.linewidth'] = 0.8  # Thinner axes
+    plt.rcParams['axes.edgecolor'] = '#333333'  # Darker gray axes
 
-plt.savefig("belief_grid_RSA_v2.svg", format="svg")
+    # Use the output directory from args
+    output_path = os.path.join(args.output_dir, "Fig4.png")
+    os.makedirs(args.output_dir, exist_ok=True)
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"Fig4 saved to: {output_path}")
+    
+    # Also save as SVG
+    svg_path = os.path.join(args.output_dir, "Fig4.svg")
+    plt.savefig(svg_path, format="svg", bbox_inches='tight')
+    print(f"SVG version saved to: {svg_path}")
 
-plt.show()
+    plt.show()
 
-print("\nGrid processing and plotting complete.")
+    print("\nGrid processing and plotting complete.")
+
+
+if __name__ == "__main__":
+    main()
