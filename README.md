@@ -8,7 +8,7 @@ This repository contains the code for reproducing the results in "Neural network
 
 ```bash
 # Clone the repository (quantum-public branch)
-git clone -b quantum-public https://github.com/yourusername/epsilon-transformers.git
+git clone -b quantum-public https://github.com/adamimos/epsilon-transformers.git
 cd epsilon-transformers
 
 # Install UV package manager
