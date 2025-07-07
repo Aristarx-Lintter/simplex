@@ -4,33 +4,31 @@ This repository contains the code for reproducing the results in "Neural network
 
 ## Quick Start Guide
 
-### 1. Training Networks
-
-Model checkpoints are available on HuggingFace. If you wish to recreate the training of the models used in the paper run the following commands:
+### Installation
 
 ```bash
-# RNN experiments (LSTM, GRU, RNN across all processes)
-uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_rnn.yaml
+# Clone the repository (quantum-public branch)
+git clone -b quantum-public https://github.com/yourusername/epsilon-transformers.git
+cd epsilon-transformers
 
-# Transformer experiments
-uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_mess3_bloch.yaml
-uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_moon.yaml
-uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_frdn.yaml
+# Install UV package manager
+pip install uv
+
+# Install dependencies
+uv sync
 ```
 
-**CPU Training**: Change `device: cuda` to `device: cpu` in any YAML file and use `./scripts/launcher.py` instead of `launcher_cuda_parallel.py`.
-
-### 2. Run Regression Analysis Pipeline
+### 1. Run Regression Analysis Pipeline
 
 ```bash
 # Using trained models from HuggingFace (recommended for reproduction)
 uv run python -m scripts.activation_analysis.run_regression_analysis --source huggingface
 
-# Using your own trained models (after step 1)
+# Using your own trained models (after training - see step 3)
 uv run python -m scripts.activation_analysis.run_regression_analysis --source local
 ```
 
-### 3. Generate Paper Figures
+### 2. Generate Paper Figures
 
 ```bash
 # Figure 2: Belief Grid Visualization (3 rows: Mess3, TomQA, Moon Process)
@@ -48,18 +46,21 @@ uv run python FigAppendix.py --data-source huggingface --model-type all
 
 All figures are saved to the `Figs/` directory.
 
-## Installation
+### 3. Training Networks (Optional)
+
+Model checkpoints are already available on HuggingFace. If you wish to recreate the training of the models used in the paper run the following commands:
 
 ```bash
-# Install UV package manager
-pip install uv
+# RNN experiments (LSTM, GRU, RNN across all processes)
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_rnn.yaml
 
-# Install dependencies
-uv sync
-
-# Or install manually
-pip install torch numpy pandas scikit-learn matplotlib huggingface-hub datasets joblib tqdm
+# Transformer experiments
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_mess3_bloch.yaml
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_moon.yaml
+uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_frdn.yaml
 ```
+
+**CPU Training**: Change `device: cuda` to `device: cpu` in any YAML file and use `./scripts/launcher.py` instead of `launcher_cuda_parallel.py`.
 
 ## Data Sources
 
