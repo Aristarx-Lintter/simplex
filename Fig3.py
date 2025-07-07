@@ -1091,7 +1091,21 @@ def main():
     if DataManager is not None and args.data_source != 'local':
         try:
             dm = DataManager(source=args.data_source, data_dir=args.data_dir)
-            analysis_dir = dm.get_analysis_data_dir()
+            
+            # Extract model IDs from the run configuration for targeted downloads
+            model_ids = []
+            runs_to_process = [
+                {"label": "Transformer (QSlice)", "sweep": "20241205175736", "run_id_int": 17, "is_markov3": False},
+                {"label": "LSTM (QSlice)", "sweep": "20241121152808", "run_id_int": 49, "is_markov3": False},
+                {"label": "Transformer (Classical)", "sweep": "20241205175736", "run_id_int": 17, "is_markov3": True},
+                {"label": "LSTM (Classical)", "sweep": "20241121152808", "run_id_int": 49, "is_markov3": True},
+            ]
+            for run_info in runs_to_process:
+                model_id = f"{run_info['sweep']}_{run_info['run_id_int']}"
+                if model_id not in model_ids:  # Avoid duplicates
+                    model_ids.append(model_id)
+            
+            analysis_dir = dm.get_analysis_data_dir(model_ids=model_ids)
             output_base_dir = str(analysis_dir)
             print(f"Using data from: {output_base_dir}")
         except Exception as e:

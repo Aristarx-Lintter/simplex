@@ -783,7 +783,16 @@ def main():
     if DataManager is not None and args.data_source != 'local':
         try:
             dm = DataManager(source=args.data_source, data_dir=args.data_dir)
-            analysis_dir = dm.get_analysis_data_for_figure(all_plot_configs)
+            
+            # Extract model IDs from all plot configs for targeted downloads
+            model_ids = []
+            for config in all_plot_configs:
+                for model_type, (sweep, run_id) in config.get('models', []):
+                    model_id = f"{sweep}_{run_id}"
+                    if model_id not in model_ids:  # Avoid duplicates
+                        model_ids.append(model_id)
+            
+            analysis_dir = dm.get_analysis_data_dir(model_ids=model_ids, download_all_checkpoints=False)
             output_base_dir = str(analysis_dir)
             print(f"Using data from: {output_base_dir}")
         except Exception as e:

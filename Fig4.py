@@ -292,7 +292,26 @@ def main():
     if DataManager is not None and args.data_source != 'local':
         try:
             dm = DataManager(source=args.data_source, data_dir=args.data_dir)
-            analysis_dir = dm.get_analysis_data_dir()
+            
+            # Extract model IDs from experiment configurations for targeted downloads
+            model_ids = []
+            # Define experiment folders (same as used below)
+            transformer_folders = {
+                "Post-Quantum": "20250421221507_0", "MESS3": "20241205175736_23",
+                "Bloch Walk": "20241205175736_17", "FRDN": "20250422023003_1"
+            }
+            lstm_folders = {
+                "Post-Quantum": "20241121152808_48", "MESS3": "20241121152808_55",
+                "Bloch Walk": "20241121152808_49", "FRDN": "20241121152808_53"
+            }
+            
+            # Collect all unique model IDs
+            all_folders = {**transformer_folders, **lstm_folders}
+            for folder in all_folders.values():
+                if folder not in model_ids:
+                    model_ids.append(folder)
+            
+            analysis_dir = dm.get_analysis_data_dir(model_ids=model_ids, download_all_checkpoints=False)
             RUN_DIR = str(analysis_dir)
             print(f"Using data from: {RUN_DIR}")
         except Exception as e:

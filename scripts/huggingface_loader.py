@@ -121,6 +121,8 @@ class HuggingFaceModelLoader:
         model_id = self._get_model_id(sweep_id, run_name)
         
         try:
+            # Trigger download of model checkpoints if needed
+            models_dir = self.data_manager.get_models_data_dir()
             checkpoints = self.data_manager.get_model_checkpoints(model_id)
             
             # Convert to S3-compatible format
@@ -132,8 +134,11 @@ class HuggingFaceModelLoader:
             
             return sorted(checkpoint_paths)
             
-        except FileNotFoundError:
-            print(f"Warning: No checkpoints found for {model_id}")
+        except FileNotFoundError as e:
+            print(f"Warning: No checkpoints found for {model_id}: {e}")
+            return []
+        except Exception as e:
+            print(f"Error listing checkpoints for {model_id}: {e}")
             return []
     
     def load_checkpoint(self, sweep_id: str, run_name: str, checkpoint_path: str) -> tuple:
@@ -219,6 +224,16 @@ class HuggingFaceModelLoader:
             "Moon Process": "post_quantum"
         }
         
+        process_name = process_map.get(process, process.lower())
+        
+        # Default process parameters
+        process_params = {
+            "tom_quantum": {"alpha": 2.5, "beta": 0.3},
+            "mess3": {"x": 0.15, "a": 0.6},
+            "fanizza": {"alpha": 2.0, "lamb": 0.5},
+            "post_quantum": {"alpha": 2.718281828459045, "beta": 0.5}  # defaults from function
+        }
+        
         config = {
             "model_config": {
                 "model_type": arch.lower(),
@@ -226,7 +241,8 @@ class HuggingFaceModelLoader:
                 "n_ctx": 64 if arch != "Transformer" else 64,
             },
             "process_config": {
-                "process_type": process_map.get(process, process.lower())
+                "name": process_name,  # Required by get_matrix_from_args
+                **process_params.get(process_name, {})  # Add process-specific parameters
             },
             "sweep_id": sweep_id,
             "run_id": run_id,

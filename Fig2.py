@@ -636,8 +636,6 @@ if __name__ == "__main__":
                        help="Target checkpoint ('last' or specific number)")
     parser.add_argument("--layer", type=str, default="combined",
                        help="Target layer for analysis")
-    parser.add_argument("--force-download", action="store_true",
-                       help="Force re-download of data files")
     
     args = parser.parse_args()
     
@@ -655,15 +653,16 @@ if __name__ == "__main__":
     if DataManager is not None and args.data_source != 'local':
         try:
             dm = DataManager(source=args.data_source, data_dir=args.data_dir)
-            # Extract model IDs and use selective download with force option
-            model_ids = set()
+            # Extract model IDs for targeted downloads
+            model_ids = []
             for config in plot_config_grid:
                 for model_type, (sweep, run_id) in config.get('models', []):
                     model_id = f"{sweep}_{run_id}"
-                    model_ids.add(model_id)
+                    if model_id not in model_ids:  # Avoid duplicates
+                        model_ids.append(model_id)
             
-            analysis_dir = dm.download_selective(list(model_ids), force_download=args.force_download)
-            output_base_dir = str(analysis_dir / 'analysis')
+            analysis_dir = dm.get_analysis_data_dir(model_ids=model_ids, download_all_checkpoints=False)
+            output_base_dir = str(analysis_dir)
             print(f"Using data from: {output_base_dir}")
         except Exception as e:
             print(f"Error setting up DataManager: {e}")

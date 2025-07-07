@@ -22,7 +22,11 @@ uv sync
 
 ```bash
 # Using trained models from HuggingFace (recommended for reproduction)
+# By default, analyzes only first and last checkpoints
 uv run python -m scripts.activation_analysis.run_regression_analysis --source huggingface
+
+# To analyze all checkpoints (slower but more comprehensive)
+uv run python -m scripts.activation_analysis.run_regression_analysis --source huggingface --all-checkpoints
 
 # Using your own trained models (after training - see step 3)
 uv run python -m scripts.activation_analysis.run_regression_analysis --source local
@@ -52,7 +56,7 @@ Model checkpoints are already available on HuggingFace. If you wish to recreate 
 
 ```bash
 # RNN experiments (LSTM, GRU, RNN across all processes)
-uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_rnn.yaml
+uv run python ./scripts/launcher_cuda_parallel_rnn.py --config ./scripts/experiment_config_rnn.yaml
 
 # Transformer experiments
 uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_mess3_bloch.yaml
@@ -60,7 +64,7 @@ uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_
 uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_frdn.yaml
 ```
 
-**CPU Training**: Change `device: cuda` to `device: cpu` in any YAML file and use `./scripts/launcher.py` instead of `launcher_cuda_parallel.py`.
+**CPU Training**: Change `device: cuda` to `device: cpu` in any YAML file and use `./scripts/launcher.py` (or `./scripts/launcher_rnn.py`) instead of `launcher_cuda_parallel.py` (or `launcher_cuda_parallel_rnn.py`).
 
 ## Data Sources
 

@@ -10,6 +10,7 @@ import shutil
 from pathlib import Path
 from typing import Optional, Union, Dict, List
 from huggingface_hub import hf_hub_download, snapshot_download
+from huggingface_hub.utils import disable_progress_bars, enable_progress_bars
 from tqdm.auto import tqdm
 import warnings
 
@@ -80,39 +81,39 @@ class DataManager:
             "20241121152808_64": ("RNN", "Moon Process"),
         }
     
-    def get_analysis_data_dir(self, model_ids: List[str] = None) -> Path:
+    def get_analysis_data_dir(self, model_ids: List[str] = None, download_all_checkpoints: bool = True) -> Path:
         """Get directory containing analysis files."""
         if self.source == 'local':
             if self.data_dir is None:
                 raise ValueError("data_dir must be provided for local source")
             return self._get_local_analysis_dir()
         elif self.source == 'huggingface':
-            return self._get_hf_analysis_dir(model_ids)
+            return self._get_hf_analysis_dir(model_ids, download_all_checkpoints=download_all_checkpoints)
         elif self.source == 'auto':
             # Try local first
             if self.data_dir is not None and self._check_local_analysis_exists():
                 return self._get_local_analysis_dir()
             else:
                 print("Local data not found, downloading from HuggingFace...")
-                return self._get_hf_analysis_dir(model_ids)
+                return self._get_hf_analysis_dir(model_ids, download_all_checkpoints=download_all_checkpoints)
         else:
             raise ValueError(f"Unknown source: {self.source}")
     
-    def get_models_data_dir(self) -> Path:
+    def get_models_data_dir(self, model_ids: List[str] = None) -> Path:
         """Get directory containing model checkpoints."""
         if self.source == 'local':
             if self.data_dir is None:
                 raise ValueError("data_dir must be provided for local source")
             return self._get_local_models_dir()
         elif self.source == 'huggingface':
-            return self._get_hf_models_dir()
+            return self._get_hf_models_dir(model_ids)
         elif self.source == 'auto':
             # Try local first
             if self.data_dir is not None and self._check_local_models_exists():
                 return self._get_local_models_dir()
             else:
                 print("Local models not found, downloading from HuggingFace...")
-                return self._get_hf_models_dir()
+                return self._get_hf_models_dir(model_ids)
         else:
             raise ValueError(f"Unknown source: {self.source}")
     
@@ -164,7 +165,7 @@ class DataManager:
         if model_id not in self.model_mappings:
             raise ValueError(f"Unknown model_id: {model_id}")
         
-        models_dir = self.get_models_data_dir()
+        models_dir = self.get_models_data_dir([model_id])  # Pass model_id for selective download
         model_dir = models_dir / model_id
         
         if not model_dir.exists():
@@ -244,18 +245,137 @@ class DataManager:
         
         return self.get_analysis_data_dir(model_ids)
     
-    def download_selective(self, model_ids: List[str], force_download: bool = False) -> Path:
+    def download_selective_models(self, model_ids: List[str], force_download: bool = False, download_all_checkpoints: bool = True) -> Path:
+        """
+        Download only specific model checkpoints from HuggingFace.
+        
+        Args:
+            model_ids: List of model identifiers to download
+            force_download: Force re-download even if cached
+            download_all_checkpoints: Download all available checkpoints (default: True)
+            
+        Returns:
+            Path to downloaded dataset
+        """
+        print(f"Downloading model checkpoints from {self.repo_id} for models: {model_ids}")
+        
+        # Disable individual HuggingFace progress bars
+        disable_progress_bars()
+        
+        dataset_dir = self.cache_dir / 'hf_dataset'
+        dataset_dir.mkdir(parents=True, exist_ok=True)
+        
+        models_dir = dataset_dir / 'models'
+        models_dir.mkdir(parents=True, exist_ok=True)
+        
+        # First pass: count total files to download
+        total_files_to_download = 0
+        download_queue = []  # List of (model_id, filename, remote_path, local_path)
+        
+        for model_id in model_ids:
+            if model_id not in self.model_mappings:
+                print(f"Warning: Unknown model_id {model_id}, skipping")
+                continue
+                
+            model_dir = models_dir / model_id
+            model_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Get all model checkpoint files for this model from HF
+            try:
+                from huggingface_hub import list_repo_files
+                
+                all_files = list_repo_files(self.repo_id, repo_type='dataset')
+                model_files = [f for f in all_files if f.startswith(f"models/{model_id}/") and f.endswith('.pt')]
+                
+                # Extract checkpoint numbers
+                checkpoint_nums = set()
+                for f in model_files:
+                    # Extract filename from models/model_id/checkpoint.pt
+                    filename = f.split('/')[-1]
+                    checkpoint_num = filename.replace('.pt', '')
+                    if checkpoint_num.isdigit():
+                        checkpoint_nums.add(checkpoint_num)
+                
+                if checkpoint_nums:
+                    sorted_nums = sorted([int(x) for x in checkpoint_nums])
+                    
+                    if download_all_checkpoints:
+                        # Download ALL checkpoints
+                        checkpoints_to_download = [str(x) for x in sorted_nums]
+                    else:
+                        # Download first and last only
+                        checkpoints_to_download = [str(sorted_nums[0])]  # First (0)
+                        if len(sorted_nums) > 1:
+                            checkpoints_to_download.append(str(sorted_nums[-1]))  # Last
+                else:
+                    checkpoints_to_download = ['0']  # Fallback
+                    
+            except Exception as e:
+                print(f"  Could not list remote model files: {e}, using fallback checkpoints")
+                checkpoints_to_download = ['0']
+            
+            # Add checkpoint files to download queue
+            for ckpt_id in checkpoints_to_download:
+                filename = f"{ckpt_id}.pt"
+                local_path = model_dir / filename
+                
+                if not (local_path.exists() and local_path.stat().st_size > 0) or force_download:
+                    remote_path = f"models/{model_id}/{filename}"
+                    download_queue.append((model_id, filename, remote_path, local_path))
+                    total_files_to_download += 1
+            
+            # Also download loss.csv if it exists
+            loss_filename = "loss.csv"
+            loss_local_path = model_dir / loss_filename
+            if not (loss_local_path.exists() and loss_local_path.stat().st_size > 0) or force_download:
+                loss_remote_path = f"models/{model_id}/{loss_filename}"
+                download_queue.append((model_id, loss_filename, loss_remote_path, loss_local_path))
+                total_files_to_download += 1
+        
+        # Second pass: download all queued files with unified progress bar
+        if total_files_to_download > 0:
+            print(f"Downloading {total_files_to_download} model checkpoint files...")
+            
+            with tqdm(total=total_files_to_download, desc="Downloading model checkpoints", unit="file") as pbar:
+                downloaded_count = 0
+                for model_id, filename, remote_path, local_path in download_queue:
+                    try:
+                        hf_hub_download(
+                            repo_id=self.repo_id,
+                            repo_type='dataset',
+                            filename=remote_path,
+                            local_dir=str(dataset_dir)
+                        )
+                        downloaded_count += 1
+                        pbar.set_postfix_str(f"Downloaded {filename}")
+                        pbar.update(1)
+                    except Exception as e:
+                        pbar.set_postfix_str(f"Skipped {filename} (not found)")
+                        pbar.update(1)
+                        print(f"  Warning: Could not download {filename}: {e}")
+            
+            print(f"Model download completed: {downloaded_count}/{total_files_to_download} files downloaded to {dataset_dir}")
+        else:
+            print(f"All model files already cached in {dataset_dir}")
+            
+        return dataset_dir
+
+    def download_selective(self, model_ids: List[str], force_download: bool = False, download_all_checkpoints: bool = True) -> Path:
         """
         Download only specific model data from HuggingFace.
         
         Args:
             model_ids: List of model identifiers to download
             force_download: Force re-download even if cached
+            download_all_checkpoints: Download all available checkpoints (default: True for complete analysis)
             
         Returns:
             Path to downloaded dataset
         """
         print(f"Downloading selective data from {self.repo_id} for models: {model_ids}")
+        
+        # Disable individual HuggingFace progress bars to keep our unified progress bar clean
+        disable_progress_bars()
         
         dataset_dir = self.cache_dir / 'hf_dataset'
         dataset_dir.mkdir(parents=True, exist_ok=True)
@@ -263,41 +383,27 @@ class DataManager:
         analysis_dir = dataset_dir / 'analysis'
         analysis_dir.mkdir(parents=True, exist_ok=True)
         
-        # Download files for each requested model
-        downloaded_any = False
+        # First pass: count total files to download
+        total_files_to_download = 0
+        download_queue = []  # List of (model_id, file_type, filename, remote_path, local_path)
+        
         for model_id in model_ids:
             if model_id not in self.model_mappings:
                 print(f"Warning: Unknown model_id {model_id}, skipping")
                 continue
                 
             model_dir = analysis_dir / model_id
-            
-            print(f"Checking files for model {model_id}...")
             model_dir.mkdir(parents=True, exist_ok=True)
             
-            # Download ground truth files (check if missing or force download)
+            # Check ground truth files
             for gt_file in ['ground_truth_data.joblib', 'markov3_ground_truth_data.joblib']:
                 local_path = model_dir / gt_file
-                if local_path.exists() and not force_download:
-                    print(f"  {gt_file} already exists, skipping")
-                    continue
-                    
-                try:
+                if not (local_path.exists() and local_path.stat().st_size > 0) or force_download:
                     remote_path = f"analysis/{model_id}/{gt_file}"
-                    
-                    hf_hub_download(
-                        repo_id=self.repo_id,
-                        repo_type='dataset',
-                        filename=remote_path,
-                        local_dir=str(dataset_dir),
-                        local_dir_use_symlinks=False
-                    )
-                    downloaded_any = True
-                    print(f"  Downloaded {gt_file}")
-                except Exception as e:
-                    print(f"  Warning: Could not download {gt_file}: {e}")
+                    download_queue.append((model_id, "ground_truth", gt_file, remote_path, local_path))
+                    total_files_to_download += 1
             
-            # Download checkpoint files (dynamically find latest)
+            # Check checkpoint files (dynamically find latest)
             try:
                 from huggingface_hub import list_repo_files
                 
@@ -317,21 +423,24 @@ class DataManager:
                                 checkpoint_nums.add(num_part)
                 
                 if checkpoint_nums:
-                    # Sort and get first, some middle ones, and last
                     sorted_nums = sorted([int(x) for x in checkpoint_nums])
-                    checkpoints_to_download = [str(sorted_nums[0])]  # First (0)
                     
-                    if len(sorted_nums) > 1:
-                        checkpoints_to_download.append(str(sorted_nums[-1]))  # Last
-                    if len(sorted_nums) > 5:
-                        # Add some intermediate ones
-                        mid_idx = len(sorted_nums) // 2
-                        checkpoints_to_download.append(str(sorted_nums[mid_idx]))
-                        if len(sorted_nums) > 10:
-                            quarter_idx = len(sorted_nums) // 4
-                            checkpoints_to_download.append(str(sorted_nums[quarter_idx]))
-                    
-                    print(f"  Found {len(checkpoint_nums)} checkpoints, downloading: {checkpoints_to_download}")
+                    if download_all_checkpoints:
+                        # Download ALL checkpoints
+                        checkpoints_to_download = [str(x) for x in sorted_nums]
+                    else:
+                        # Original selective logic - get first, some middle ones, and last
+                        checkpoints_to_download = [str(sorted_nums[0])]  # First (0)
+                        
+                        if len(sorted_nums) > 1:
+                            checkpoints_to_download.append(str(sorted_nums[-1]))  # Last
+                        if len(sorted_nums) > 5:
+                            # Add some intermediate ones
+                            mid_idx = len(sorted_nums) // 2
+                            checkpoints_to_download.append(str(sorted_nums[mid_idx]))
+                            if len(sorted_nums) > 10:
+                                quarter_idx = len(sorted_nums) // 4
+                                checkpoints_to_download.append(str(sorted_nums[quarter_idx]))
                 else:
                     checkpoints_to_download = ['0']  # Fallback
                     
@@ -339,34 +448,44 @@ class DataManager:
                 print(f"  Could not list remote files: {e}, using fallback checkpoints")
                 checkpoints_to_download = ['0', '204800', '4075724800']
             
+            # Add checkpoint files to download queue
             for ckpt_id in checkpoints_to_download:
                 for prefix in ['checkpoint_', 'markov3_checkpoint_']:
                     filename = f"{prefix}{ckpt_id}.joblib"
                     local_path = model_dir / filename
                     
-                    if local_path.exists() and not force_download:
-                        continue
-                        
-                    try:
+                    if not (local_path.exists() and local_path.stat().st_size > 0) or force_download:
                         remote_path = f"analysis/{model_id}/{filename}"
-                        
+                        download_queue.append((model_id, "checkpoint", filename, remote_path, local_path))
+                        total_files_to_download += 1
+        
+        # Second pass: download all queued files with unified progress bar
+        if total_files_to_download > 0:
+            print(f"Downloading {total_files_to_download} files...")
+            
+            with tqdm(total=total_files_to_download, desc="Downloading analysis files", unit="file") as pbar:
+                downloaded_count = 0
+                for model_id, file_type, filename, remote_path, local_path in download_queue:
+                    try:
                         hf_hub_download(
                             repo_id=self.repo_id,
                             repo_type='dataset',
                             filename=remote_path,
-                            local_dir=str(dataset_dir),
-                            local_dir_use_symlinks=False
+                            local_dir=str(dataset_dir)
                         )
-                        downloaded_any = True
-                        print(f"  Downloaded {filename}")
-                    except Exception:
-                        # Checkpoint doesn't exist, skip silently
-                        pass
-        
-        if downloaded_any:
-            print(f"Selective download completed to {dataset_dir}")
+                        downloaded_count += 1
+                        pbar.set_postfix_str(f"Downloaded {filename}")
+                        pbar.update(1)
+                    except Exception as e:
+                        # Skip files that don't exist (e.g., some checkpoint combinations)
+                        pbar.set_postfix_str(f"Skipped {filename} (not found)")
+                        pbar.update(1)
+                        if file_type == "ground_truth":  # Ground truth files should exist
+                            print(f"  Warning: Could not download {filename}: {e}")
+            
+            print(f"Download completed: {downloaded_count}/{total_files_to_download} files downloaded to {dataset_dir}")
         else:
-            print(f"No new files downloaded (already cached or not found)")
+            print(f"All files already cached in {dataset_dir}")
             
         return dataset_dir
     
@@ -396,19 +515,24 @@ class DataManager:
             else:
                 raise FileNotFoundError(f"Models directory not found in {self.data_dir}")
     
-    def _get_hf_analysis_dir(self, model_ids: List[str] = None) -> Path:
+    def _get_hf_analysis_dir(self, model_ids: List[str] = None, download_all_checkpoints: bool = True) -> Path:
         """Get HuggingFace analysis directory."""
         if model_ids:
             # Use selective download for specific models
-            dataset_dir = self.download_selective(model_ids)
+            dataset_dir = self.download_selective(model_ids, download_all_checkpoints=download_all_checkpoints)
         else:
             # Fall back to full download
             dataset_dir = self.download_from_huggingface()
         return dataset_dir / 'analysis'
     
-    def _get_hf_models_dir(self) -> Path:
+    def _get_hf_models_dir(self, model_ids: List[str] = None) -> Path:
         """Get HuggingFace models directory."""
-        dataset_dir = self.download_from_huggingface()
+        if model_ids:
+            # Use selective download for specific models
+            dataset_dir = self.download_selective_models(model_ids)
+        else:
+            # Fall back to full download
+            dataset_dir = self.download_from_huggingface()
         return dataset_dir / 'models'
     
     def _check_local_analysis_exists(self) -> bool:
@@ -422,7 +546,8 @@ class DataManager:
             sample_models = ['20241121152808_57', '20241205175736_23']
             for model_id in sample_models:
                 model_dir = analysis_dir / model_id
-                if model_dir.exists() and (model_dir / 'ground_truth_data.joblib').exists():
+                gt_file = model_dir / 'ground_truth_data.joblib'
+                if model_dir.exists() and gt_file.exists() and gt_file.stat().st_size > 0:
                     return True
             return False
         except:
@@ -439,8 +564,10 @@ class DataManager:
             sample_models = ['20241121152808_57', '20241205175736_23']
             for model_id in sample_models:
                 model_dir = models_dir / model_id
-                if model_dir.exists() and list(model_dir.glob('*.pt')):
-                    return True
+                if model_dir.exists():
+                    pt_files = [f for f in model_dir.glob('*.pt') if f.stat().st_size > 0]
+                    if pt_files:
+                        return True
             return False
         except:
             return False
