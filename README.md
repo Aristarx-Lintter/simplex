@@ -2,8 +2,6 @@
 
 This repository contains the code for reproducing the results in "Neural networks leverage nominally quantum and post-quantum representations".
 
-## Quick Start Guide
-
 ### Installation
 
 ```bash
@@ -37,11 +35,9 @@ uv run python FigAppendix.py --data-source huggingface --model-type all
 
 All figures are saved to the `Figs/` directory.
 
-
-
 ### 2. Training Networks (Optional)
 
-Model checkpoints are already available on HuggingFace. If you wish to recreate the training of the models used in the paper run the commands below. Note that these scripts require a GPU, and were run on a H100 GPU:
+Model checkpoints are publically available on HuggingFace. If you wish to recreate the training of the models used in the paper run the commands below. Note that these scripts require a GPU, and were run on a H100 GPU:
 
 ```bash
 # RNN experiments (LSTM, GRU, RNN across all processes)
@@ -53,19 +49,17 @@ uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_
 uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_frdn.yaml
 ```
 
+Additionally, for completeness and reproducibility we include links to the exact github commits when all networks were trained, in the Appendix of the manuscript.
+
 ### 3. Run Regression Analysis Pipeline
 
-The regression analysis pipeline is used to analyze the trained models and produce the regression results used in the paper. It is very computationally intensive, and was run on a H100 GPU. Because of the computational cost, we provide the results of running this pipeline as part of the HuggingFace dataset. If you wish to look at the code, we ran this using the following command:
+The regression analysis pipeline was used to analyze the trained models and produce the regression results used in the paper. It is very computationally intensive, and was run on a H100 GPU. Because of the computational cost, we provide the results of running this pipeline as part of the HuggingFace dataset (see below). If you wish to look at the code, we ran this using the following command:
 
 ```bash
-uv run python -m scripts.activation_analysis.run_regression_analysis --source s3
+uv run python -m scripts.activation_analysis.run_regression_analysis
 ```
-
-We also provide a flag to load and analyze checkpoints from our public HuggingFace dataset:
-
-```
-uv run python -m scripts.activation_analysis.run_regression_analysis --source huggingface --all-checkpoints
-```
+ s
+This code used a private AWS s3 bucket with model checkpoints. We provide the checkpoints on Huggingface. See below.
 
 
 ## Data Sources
@@ -127,11 +121,7 @@ Train your own models using the config files above. Results will be saved to `./
 └── Figs/                                     # Generated figures output
 ```
 
-## Advanced Usage
-
-- **Force re-download**: Add `--force-download` to figure generation commands
-- **Local data**: Use `--data-source local` if you have local analysis results
-- **Custom output**: Use `--output-dir` to specify figure output directory
+## More Details
 
 For detailed methods and implementation details, see [`paper_methods.md`](paper_methods.md).
 
