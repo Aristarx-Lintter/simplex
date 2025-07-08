@@ -516,12 +516,16 @@ def main():
         print(f"DEBUG: MSP data shapes - inputs: {nn_inputs.shape}, beliefs: {nn_beliefs.shape}, probs: {nn_probs.shape}")
         print(f"DEBUG: MSP probs sum: {nn_probs.sum():.6f}, mean: {nn_probs.mean():.6f}, min: {nn_probs.min():.6f}, max: {nn_probs.max():.6f}")
 
+        print(f"DEBUG: Generating classical belief states with max_order=3...")
         classical_beliefs = belief_generator.generate_classical_belief_states(
         run_config, max_order=3)
+        print(f"DEBUG: Classical belief generation complete. Available orders: {list(classical_beliefs.keys())}")
 
         classical_nn_inputs = classical_beliefs['markov_order_3']['inputs']
         classical_nn_beliefs = classical_beliefs['markov_order_3']['beliefs']
         classical_nn_probs = classical_beliefs['markov_order_3']['probs']
+        print(f"DEBUG: Classical belief shapes - inputs: {classical_nn_inputs.shape}, beliefs: {classical_nn_beliefs.shape}, probs: {classical_nn_probs.shape}")
+        print(f"DEBUG: Classical probs sum: {classical_nn_probs.sum():.6f}, mean: {classical_nn_probs.mean():.6f}")
         
         # Deduplicate neural network data
         print(f"DEBUG: Starting NN data deduplication...")
@@ -542,11 +546,19 @@ def main():
         kf_list = list(kf.split(all_positions))
         
         # Deduplicate classical model data
+        print(f"DEBUG: Starting classical data deduplication...")
+        print(f"DEBUG: Classical input shapes before dedup - inputs: {classical_nn_inputs.shape}, probs: {classical_nn_probs.shape}, beliefs: {classical_nn_beliefs.shape}")
         classical_dedup_probs, classical_dedup_beliefs, classical_dedup_indices, classical_prefix_to_indices = deduplicate_data(
             classical_nn_inputs, 
             classical_nn_probs, 
             classical_nn_beliefs
         )
+        print(f"DEBUG: After classical deduplication:")
+        print(f"DEBUG: - Unique prefixes: {len(classical_prefix_to_indices)}")
+        print(f"DEBUG: - Dedup probs shape: {classical_dedup_probs.shape}, sum: {classical_dedup_probs.sum():.6f}")
+        print(f"DEBUG: - Dedup beliefs shape: {classical_dedup_beliefs.shape}")
+        print(f"DEBUG: - Original total items: {classical_nn_inputs.shape[0] * classical_nn_inputs.shape[1]}")
+        print(f"DEBUG: - Deduplicated items: {len(classical_dedup_indices)}")
 
         classical_kf, classical_all_positions = compute_kfold_split(classical_dedup_probs)
         classical_kf_list = list(classical_kf.split(classical_all_positions))
@@ -592,6 +604,9 @@ def main():
             except (KeyError, IndexError, AttributeError):
                 val_loss_mean = float('nan')
             
+            print(f"DEBUG: Extracting NN activations for checkpoint {ckpt_ind}...")
+            print(f"DEBUG: Model type: {get_nn_type(run_id)}")
+            print(f"DEBUG: Using activation keys: {TRANSFORMER_ACTIVATION_KEYS}")
             act_extractor = ActivationExtractor(device=DEVICE)
             nn_acts_ = act_extractor.extract_activations(
                 model,
@@ -602,8 +617,12 @@ def main():
             nn_acts = {}
             for layer, acts in nn_acts_.items():
                 nn_acts[layer] = acts
+                print(f"DEBUG: NN layer {layer} activation shape: {acts.shape}")
             nn_acts['combined'] = _combine_layer_activations(nn_acts)
+            print(f"DEBUG: Combined NN activations shape: {nn_acts['combined'].shape}")
+            print(f"DEBUG: Total NN activation layers: {len(nn_acts)}")
 
+            print(f"DEBUG: Extracting classical activations...")
             classical_acts_ = act_extractor.extract_activations(
                 model,
                 classical_nn_inputs,
@@ -613,17 +632,25 @@ def main():
             classical_acts = {}
             for layer, acts in classical_acts_.items():
                 classical_acts[layer] = acts
+                print(f"DEBUG: Classical layer {layer} activation shape: {acts.shape}")
             classical_acts['combined'] = _combine_layer_activations(classical_acts)
+            print(f"DEBUG: Combined classical activations shape: {classical_acts['combined'].shape}")
+            print(f"DEBUG: Total classical activation layers: {len(classical_acts)}")
             
             save_data = collections.defaultdict(nested_dict_factory) # Use the named function here
             classical_save_data = collections.defaultdict(nested_dict_factory) # Use the named function here
             
             for layer, act in nn_acts.items():
+                print(f"DEBUG: Processing layer '{layer}' - shape: {act.shape}")
                 
                 # dedup the activations
+                print(f"DEBUG: Deduplicating NN activations for layer {layer}...")
                 dedup_acts, dedup_indices = deduplicate_tensor(prefix_to_indices, act, aggregation_fn=None)
+                print(f"DEBUG: NN dedup_acts shape: {dedup_acts.shape}")
 
+                print(f"DEBUG: Deduplicating classical activations for layer {layer}...")
                 classical_dedup_acts, classical_dedup_indices = deduplicate_tensor(classical_prefix_to_indices, classical_acts[layer], aggregation_fn=None)
+                print(f"DEBUG: Classical dedup_acts shape: {classical_dedup_acts.shape}")
                 
                 zscore_acts = (dedup_acts.numpy() - dedup_acts.numpy().mean(axis=0)) / dedup_acts.numpy().std(axis=0)
                 cum_var_exp, _, _ = calculate_weighted_pca_variance(dedup_acts.numpy(), dedup_probs.numpy())
@@ -635,6 +662,10 @@ def main():
 
                 # Move tensors to configured device
                 device = torch.device(DEVICE)
+                print(f"DEBUG: Running NN regression for layer {layer}...")
+                print(f"DEBUG: Input shapes - acts: {dedup_acts.shape}, beliefs: {dedup_beliefs.shape}, probs: {dedup_probs.shape}")
+                print(f"DEBUG: Using rcond values: {RCOND_SWEEP_LIST}")
+                print(f"DEBUG: K-fold splits: {len(kf_list)}")
                 results = run_activation_to_beliefs_regression_kf(
                     reg_analyzer,
                     dedup_acts.to(device),
@@ -643,7 +674,10 @@ def main():
                     kf_list,
                     rcond_values=RCOND_SWEEP_LIST,
                 )
+                print(f"DEBUG: NN regression complete. Final metrics: {list(results['final_metrics'].keys())}")
 
+                print(f"DEBUG: Running classical regression for layer {layer}...")
+                print(f"DEBUG: Classical input shapes - acts: {classical_dedup_acts.shape}, beliefs: {classical_dedup_beliefs.shape}, probs: {classical_dedup_probs.shape}")
                 classical_results = run_activation_to_beliefs_regression_kf(
                     reg_analyzer,
                     classical_dedup_acts.to(device),
@@ -652,6 +686,7 @@ def main():
                     classical_kf_list,
                     rcond_values=RCOND_SWEEP_LIST,
                 )
+                print(f"DEBUG: Classical regression complete. Final metrics: {list(classical_results['final_metrics'].keys())}")
 
                 # Calculate Euclidean distance weighted by probabilities
                 save_data[layer]['predicted_beliefs'] = results['predictions']
