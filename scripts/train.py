@@ -202,7 +202,6 @@ def main():
     if config['global_config']['scheduler']:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode='min', factor=0.5, patience=1000, cooldown=200, threshold=1e-6,
-            verbose=True
         )
         # implement cosine annealing warm restarts
         #scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
