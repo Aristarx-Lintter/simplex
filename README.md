@@ -18,21 +18,8 @@ pip install uv
 uv sync
 ```
 
-### 1. Run Regression Analysis Pipeline
 
-```bash
-# Using trained models from HuggingFace (recommended for reproduction)
-# By default, analyzes only first and last checkpoints
-uv run python -m scripts.activation_analysis.run_regression_analysis --source huggingface
-
-# To analyze all checkpoints (slower but more comprehensive)
-uv run python -m scripts.activation_analysis.run_regression_analysis --source huggingface --all-checkpoints
-
-# Using your own trained models (after training - see step 3)
-uv run python -m scripts.activation_analysis.run_regression_analysis --source local
-```
-
-### 2. Generate Paper Figures
+### 1. Generate Paper Figures
 
 ```bash
 # Figure 2: Belief Grid Visualization (3 rows: Mess3, TomQA, Moon Process)
@@ -50,9 +37,11 @@ uv run python FigAppendix.py --data-source huggingface --model-type all
 
 All figures are saved to the `Figs/` directory.
 
-### 3. Training Networks (Optional)
 
-Model checkpoints are already available on HuggingFace. If you wish to recreate the training of the models used in the paper run the following commands:
+
+### 2. Training Networks (Optional)
+
+Model checkpoints are already available on HuggingFace. If you wish to recreate the training of the models used in the paper run the commands below. Note that these scripts require a GPU, and were run on a H100 GPU:
 
 ```bash
 # RNN experiments (LSTM, GRU, RNN across all processes)
@@ -64,7 +53,20 @@ uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_
 uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_frdn.yaml
 ```
 
-**CPU Training**: Change `device: cuda` to `device: cpu` in any YAML file and use `./scripts/launcher.py` (or `./scripts/launcher_rnn.py`) instead of `launcher_cuda_parallel.py` (or `launcher_cuda_parallel_rnn.py`).
+### 3. Run Regression Analysis Pipeline
+
+The regression analysis pipeline is used to analyze the trained models and produce the regression results used in the paper. It is very computationally intensive, and was run on a H100 GPU. Because of the computational cost, we provide the results of running this pipeline as part of the HuggingFace dataset. If you wish to look at the code, we ran this using the following command:
+
+```bash
+uv run python -m scripts.activation_analysis.run_regression_analysis --source s3
+```
+
+We also provide a flag to load and analyze checkpoints from our public HuggingFace dataset:
+
+```
+uv run python -m scripts.activation_analysis.run_regression_analysis --source huggingface --all-checkpoints
+```
+
 
 ## Data Sources
 

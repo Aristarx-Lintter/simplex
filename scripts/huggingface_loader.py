@@ -238,7 +238,7 @@ class HuggingFaceModelLoader:
             "model_config": {
                 "model_type": arch.lower(),
                 "n_layers": 4,
-                "n_ctx": 64 if arch != "Transformer" else 64,
+                "n_ctx": 8,
             },
             "process_config": {
                 "name": process_name,  # Required by get_matrix_from_args
