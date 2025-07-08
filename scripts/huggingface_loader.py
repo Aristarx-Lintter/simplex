@@ -15,6 +15,8 @@ from typing import Optional, List, Dict, Any
 import torch
 from huggingface_hub import hf_hub_download, list_repo_files
 from scripts.data_manager import DataManager
+from epsilon_transformers.training.networks import create_RNN
+from transformer_lens import HookedTransformer, HookedTransformerConfig
 
 class HuggingFaceModelLoader:
     """
@@ -141,7 +143,7 @@ class HuggingFaceModelLoader:
             print(f"Error listing checkpoints for {model_id}: {e}")
             return []
     
-    def load_checkpoint(self, sweep_id: str, run_name: str, checkpoint_path: str) -> tuple:
+    def load_checkpoint(self, sweep_id: str, run_name: str, checkpoint_path: str, device: str = 'cpu') -> tuple:
         """
         Load a model checkpoint.
         
@@ -149,6 +151,7 @@ class HuggingFaceModelLoader:
             sweep_id: Sweep identifier
             run_name: Run name
             checkpoint_path: Path to checkpoint file
+            device: Device to load model onto ('cpu' or 'cuda')
             
         Returns:
             Tuple of (model, run_config)
@@ -169,7 +172,7 @@ class HuggingFaceModelLoader:
             raise FileNotFoundError(f"Checkpoint {checkpoint_name} not found for {model_id}")
         
         # Load the checkpoint
-        checkpoint = torch.load(checkpoint_file, map_location='cpu')
+        checkpoint = torch.load(checkpoint_file, map_location=device)
         
         # Extract model from checkpoint
         if 'model_state_dict' in checkpoint:
@@ -183,7 +186,7 @@ class HuggingFaceModelLoader:
         run_config = self._load_run_config(model_id)
         
         # Create model from checkpoint
-        model = self._create_model_from_checkpoint(model_state, run_config)
+        model = self._create_model_from_checkpoint(model_state, run_config, device)
         
         return model, run_config
     
@@ -258,32 +261,68 @@ class HuggingFaceModelLoader:
                 "d_model": 64
             })
         else:
+            # RNN models need additional configuration parameters
             config["model_config"].update({
                 "hidden_size": 64,
-                "direction": "uni"
+                "direction": "uni",
+                "rnn_type": arch,  # LSTM, GRU, or RNN
+                "num_layers": 4,
+                "dropout": 0.0,
+                "bidirectional": False
             })
         
         return config
     
-    def _create_model_from_checkpoint(self, model_state: Dict, run_config: Dict) -> torch.nn.Module:
+    def _create_model_from_checkpoint(self, model_state: Dict, run_config: Dict, device: str = 'cpu') -> torch.nn.Module:
         """Create model from checkpoint state and config."""
-        # This is a simplified version - in practice, you'd need to recreate
-        # the exact model architecture used during training
+        architecture = run_config.get("architecture", "Unknown")
         
-        # For now, return a placeholder that holds the state dict
-        class CheckpointModel(torch.nn.Module):
-            def __init__(self, state_dict, config):
-                super().__init__()
-                self.state_dict_data = state_dict
-                self.config = config
+        if architecture == "Transformer":
+            return self._create_transformer_model(model_state, run_config, device)
+        else:
+            # For RNN models (LSTM, GRU, RNN)
+            return self._create_rnn_model(model_state, run_config, device)
+    
+    def _create_rnn_model(self, model_state: Dict, run_config: Dict, device: str = 'cpu') -> torch.nn.Module:
+        """Create RNN model from checkpoint state and config."""
+        try:
+            # Infer vocab size from the output layer in the state dict
+            output_layer_weight = model_state['output_layer.weight']
+            vocab_size = output_layer_weight.size(0)  # First dimension is output size (vocab size)
+            
+            # Create RNN model based on config structure
+            model = create_RNN(run_config, vocab_size, device)
+            
+            # Load state dict
+            model.load_state_dict(model_state)
+            
+            return model
+        except Exception as e:
+            raise RuntimeError(f"Failed to create RNN model: {e}")
+    
+    def _create_transformer_model(self, model_state: Dict, run_config: Dict, device: str = 'cpu') -> torch.nn.Module:
+        """Create Transformer model from checkpoint state and config."""
+        try:
+            # Prepare model config
+            model_config = run_config['model_config'].copy()
+            
+            # Handle dtype conversion like S3 loader
+            if 'dtype' in model_config:
+                if isinstance(model_config['dtype'], str):
+                    model_config['dtype'] = getattr(torch, model_config['dtype'].split('.')[-1])
+            else:
+                model_config['dtype'] = torch.float32
                 
-            def load_state_dict(self, state_dict):
-                self.state_dict_data = state_dict
-                
-            def state_dict(self):
-                return self.state_dict_data
-        
-        return CheckpointModel(model_state, run_config)
+            model_config['device'] = device
+            
+            # Create and load model
+            hooked_config = HookedTransformerConfig(**model_config)
+            model = HookedTransformer(hooked_config)
+            model.load_state_dict(model_state)
+            
+            return model
+        except Exception as e:
+            raise RuntimeError(f"Failed to create Transformer model: {e}")
     
     def load_loss_from_run(self, sweep_id: str, run_name: str) -> pd.DataFrame:
         """Load loss data for a run."""
