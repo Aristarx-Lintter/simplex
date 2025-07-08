@@ -508,9 +508,13 @@ def main():
 
         n_ctx = run_config["model_config"]["n_ctx"]
         run_config["n_ctx"] = n_ctx
+        print(f"DEBUG: Preparing MSP data with n_ctx={n_ctx}")
+        print(f"DEBUG: Process config keys: {list(run_config['process_config'].keys())}")
         nn_inputs, nn_beliefs, _, nn_probs, _ = prepare_msp_data(
             run_config, run_config["process_config"]
         )
+        print(f"DEBUG: MSP data shapes - inputs: {nn_inputs.shape}, beliefs: {nn_beliefs.shape}, probs: {nn_probs.shape}")
+        print(f"DEBUG: MSP probs sum: {nn_probs.sum():.6f}, mean: {nn_probs.mean():.6f}, min: {nn_probs.min():.6f}, max: {nn_probs.max():.6f}")
 
         classical_beliefs = belief_generator.generate_classical_belief_states(
         run_config, max_order=3)
@@ -520,11 +524,19 @@ def main():
         classical_nn_probs = classical_beliefs['markov_order_3']['probs']
         
         # Deduplicate neural network data
+        print(f"DEBUG: Starting NN data deduplication...")
+        print(f"DEBUG: Input shapes before dedup - inputs: {nn_inputs.shape}, probs: {nn_probs.shape}, beliefs: {nn_beliefs.shape}")
         dedup_probs, dedup_beliefs, dedup_indices, prefix_to_indices = deduplicate_data(
             nn_inputs, 
             nn_probs, 
             nn_beliefs
         )
+        print(f"DEBUG: After NN deduplication:")
+        print(f"DEBUG: - Unique prefixes: {len(prefix_to_indices)}")
+        print(f"DEBUG: - Dedup probs shape: {dedup_probs.shape}, sum: {dedup_probs.sum():.6f}")
+        print(f"DEBUG: - Dedup beliefs shape: {dedup_beliefs.shape}")
+        print(f"DEBUG: - Original total items: {nn_inputs.shape[0] * nn_inputs.shape[1]}")
+        print(f"DEBUG: - Deduplicated items: {len(dedup_indices)}")
 
         kf, all_positions = compute_kfold_split(dedup_probs)
         kf_list = list(kf.split(all_positions))
