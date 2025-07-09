@@ -58,8 +58,51 @@ The regression analysis pipeline was used to analyze the trained models and prod
 ```bash
 uv run python -m scripts.activation_analysis.run_regression_analysis
 ```
- s
+
 This code used a private AWS s3 bucket with model checkpoints. We provide the checkpoints on Huggingface. See below.
+
+### Running Regression Analysis with Your Own S3 Bucket (Optional)
+
+If you want to run the regression analysis pipeline yourself, you'll need to set up your own S3 bucket with the model checkpoints from HuggingFace.
+
+**Step 1: Download checkpoints from HuggingFace**
+The model checkpoints are available at [`SimplexAI/quantum-representations`](https://huggingface.co/datasets/SimplexAI/quantum-representations). You'll need to download and put them on S3 with the following structure.
+
+**Step 2: Set up S3 bucket structure**
+The S3 loader expects the following folder structure:
+```
+your-s3-bucket/
+├── quantum_runs/                     # Company bucket prefix
+│   ├── 20241121152808/              # Sweep directory
+│   │   ├── run_55/                  # Individual run directory
+│   │   │   ├── 0.pt                # Initial checkpoint
+│   │   │   ├── 4075724800.pt       # Final checkpoint
+│   │   │   └── [other checkpoints...]
+│   │   ├── run_49/
+│   │   └── [other runs...]
+│   ├── 20241205175736/              # Another sweep
+│   └── [other sweeps...]
+```
+
+**Step 3: Configure environment variables**
+Create a `.env` file in your project root:
+```env
+COMPANY_AWS_ACCESS_KEY_ID=your_access_key_id
+COMPANY_AWS_SECRET_ACCESS_KEY=your_secret_access_key
+COMPANY_AWS_DEFAULT_REGION=us-east-1 # or your region
+COMPANY_S3_BUCKET_NAME=your-bucket-name
+```
+
+**Step 4: Update S3 permissions**
+Make sure your AWS credentials have the following S3 permissions:
+- `s3:GetObject`
+- `s3:ListBucket`
+- `s3:GetBucketLocation`
+
+**Step 5: Run the analysis**
+```bash
+uv run python -m scripts.activation_analysis.run_regression_analysis
+```
 
 
 ## Data Sources
@@ -115,7 +158,6 @@ Train your own models using the config files above. Results will be saved to `./
 ├── scripts/
 │   ├── experiment_config_*.yaml              # Training configurations
 │   ├── launcher_cuda_parallel.py             # GPU training launcher
-│   ├── launcher.py                           # CPU training launcher
 │   └── activation_analysis/                  # Regression analysis pipeline
 ├── epsilon_transformers/                     # Core library code
 └── Figs/                                     # Generated figures output
