@@ -37,7 +37,14 @@ All figures are saved to the `Figs/` directory.
 
 ### 2. Training Networks (Optional)
 
-Model checkpoints are publically available on HuggingFace. If you wish to recreate the training of the models used in the paper run the commands below. Note that these scripts require a GPU, and were run on a H100 GPU:
+Model checkpoints are publically available on HuggingFace. If you wish to recreate the training of the models used in the paper run the commands below. Note that these scripts require a GPU, and were run on a H100 GPU. 
+
+Before running the training scripts, you will need to set up your WandB account. You can do this by running the following command:
+```bash
+export WANDB_API_KEY=your_api_key
+```
+
+Then, you can run the training scripts:
 
 ```bash
 # RNN experiments (LSTM, GRU, RNN across all processes)
