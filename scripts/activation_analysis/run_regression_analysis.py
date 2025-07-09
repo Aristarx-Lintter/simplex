@@ -13,7 +13,7 @@ optimal mappings between activations and theoretical belief states.
 output_dir = "belief_regression_results"
 N_SPLITS = 10  # K-fold cross-validation splits
 DEVICE = 'cpu'  # Device for data extraction and tensor storage
-REGRESSION_DEVICE = 'mps'  # Device for RegressionAnalyzer (set to 'cpu' or 'cuda' if no MPS available)
+REGRESSION_DEVICE = 'cuda'  # Device for RegressionAnalyzer (set to 'cpu' or 'cuda' if no MPS available)
 RANDOM_STATE = 42
 ONLY_INITIAL_AND_FINAL = True  # Process only first and last checkpoints
 
