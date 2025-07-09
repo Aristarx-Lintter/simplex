@@ -35,7 +35,7 @@ uv run python FigAppendix.py --data-source huggingface --model-type all
 
 All figures are saved to the `Figs/` directory.
 
-### 2. Training Networks (Optional)
+### 2. Training Networks
 
 Model checkpoints are publically available on HuggingFace. If you wish to recreate the training of the models used in the paper run the commands below. Note that these scripts require a GPU, and were run on a H100 GPU. 
 
@@ -56,9 +56,11 @@ uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_
 uv run python ./scripts/launcher_cuda_parallel.py --config ./scripts/experiment_config_transformer_frdn.yaml
 ```
 
+Results are saved to the `results/` directory.
+
 Additionally, for completeness and reproducibility we include links to the exact github commits when all networks were trained, in the Appendix of the manuscript.
 
-### 3. Run Regression Analysis Pipeline
+### 3. Regression Analysis Code
 
 The regression analysis pipeline was used to analyze the trained models and produce the regression results used in the paper. It is very computationally intensive, and was run on a H100 GPU. Because of the computational cost, we provide the results of running this pipeline as part of the HuggingFace dataset (see below). If you wish to look at the code, we ran this using the following command:
 
@@ -66,7 +68,7 @@ The regression analysis pipeline was used to analyze the trained models and prod
 uv run python -m scripts.activation_analysis.run_regression_analysis
 ```
 
-This code used a private AWS s3 bucket with model checkpoints. We provide the checkpoints on Huggingface. See below.
+This code used a private AWS s3 bucket with model checkpoints. We provide the same checkpoints on Huggingface. See below.
 
 ### Running Regression Analysis with Your Own S3 Bucket (Optional)
 
