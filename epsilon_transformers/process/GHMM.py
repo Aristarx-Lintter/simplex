@@ -4,6 +4,7 @@ from abc import ABC
 from jaxtyping import Float
 from collections import deque
 from typing import Union
+from tqdm import tqdm
 
 
 from epsilon_transformers.process.MixedStateTree import MixedStateTree, MixedStateTreeNode
@@ -116,13 +117,25 @@ class GHMM(ABC):
             yield emission
             latent_state = next_latent
 
-    def derive_mixed_state_tree(self, depth: int, initial_state: Optional[np.ndarray] = None) -> MixedStateTree:
+    def derive_mixed_state_tree(
+        self, depth: int, initial_state: Optional[np.ndarray] = None, show_progress: bool = True
+        ) -> MixedStateTree:
+
         if initial_state is None:
             initial_state = self.steady_state_vector
         tree_root = MixedStateTreeNode(state_prob_vector=initial_state/ (initial_state @ self.right_eigenvector), 
                                        unnorm_state_prob_vector=initial_state,
                                        children=set(), path=[], emission_prob=0, path_prob=1.0)
         nodes = set([tree_root])
+
+        pbar = None
+        if show_progress:
+            if self.vocab_len > 1:
+                total_est = (self.vocab_len ** (depth + 1) - 1) // (self.vocab_len - 1)
+            else:
+                total_est = depth + 1
+            pbar = tqdm(total=total_est, desc=f"MST depth={depth}", leave=False)
+            pbar.update(1)  # учли корень
 
         stack = deque([(tree_root, initial_state, [], 0)])
         while stack:
@@ -153,8 +166,11 @@ class GHMM(ABC):
                         current_node.add_child(child_node)
 
                         stack.append((child_node, next_state_prob_vector, child_path, current_depth + 1))
+                        if pbar: 
+                            pbar.update(1)
             nodes.add(current_node)
-        
+        if pbar:
+            pbar.close()
         return MixedStateTree(root_node=tree_root, process=self.name, nodes=nodes, depth=depth)
     
 

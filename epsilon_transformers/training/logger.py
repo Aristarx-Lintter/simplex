@@ -68,7 +68,11 @@ class StructuredLogger:
         wandb_log['train_loss_mean'] = np.mean(train_losses)
         wandb_log['val_loss_mean'] = np.mean(val_losses)
         
-        wandb.log(wandb_log)
+        try:
+            wandb.log(wandb_log)
+        except:
+            print(wandb_log)
+
         # Append the new data
         with open(loss_file_path, 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)

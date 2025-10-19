@@ -2,7 +2,7 @@ global_config:
   output_dir: "./results"
   device: cuda
   parallel: true
-  wandb: false
+  wandb: true
   wandb_project: "quantum_transformer"
   process_dir: "./process_data"
   val_every: 1 # after n epochs, ~ is None
@@ -32,9 +32,9 @@ sweep_config:
     d_head:
       - 16
     n_layers:
-      - 4
+      - 2
     n_heads:
-      - 4
+      - 2
   process_config:
     - name: "tom_quantum"
       alpha: 1.0
