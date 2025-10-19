@@ -1,21 +1,27 @@
 import argparse
-from epsilon_transformers.training.logger import StructuredLogger
-from epsilon_transformers.process.GHMM import TransitionMatrixGHMM
-from epsilon_transformers.process.transition_matrices import get_matrix_from_args
-from epsilon_transformers.training.dataloader import get_dataloader_and_loss_lower_bound_from_process, get_dataloader_from_data
-import torch
-import numpy as np
-import copy
-from tqdm import tqdm
-
-from transformer_lens import HookedTransformer, HookedTransformerConfig
+import os
 import json
 import yaml
-import os
-from torch.nn import functional as F
-from epsilon_transformers.training.generate_data import load_process_data
+import copy
+import sys
+from pathlib import Path
 
-# import wandb
+import torch
+import numpy as np
+from torch.nn import functional as F
+from tqdm import tqdm
+from transformer_lens import HookedTransformer, HookedTransformerConfig
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+from extractors import load_data, load_mixture_data
+from epsilon_transformers.training.logger import StructuredLogger
+
+
+
 
 
 def train_epoch(model, optimizer, dataset, scheduler=None):
@@ -142,6 +148,8 @@ def main():
     set_seed(42)
 
     if config['global_config']['wandb']:
+        import wandb
+
         wandb.init(project=f"{config['global_config']['wandb_project']}_{config['global_config']['sweep_id']}",
                    name=config['run_id'])
 
@@ -158,30 +166,11 @@ def main():
     save_every = config['global_config'].get('save_every', 1)
     # Parse process parameters
 
-    # Try to load pre-generated data
-    process_data = load_process_data(config, config['global_config']['process_dir'])
-    print("process_data:", process_data)
-    
-    if process_data is not None:
-        # Data was pre-generated, load it
-        dataloader, d_vocab = get_dataloader_from_data(
-            process_data['transformer_inputs'],
-            process_data['probs'],
-            config['train_config']['batches_per_epoch'],
-            config['train_config']['batch_size'],
-            device
-        )
-        loss_lower_bound = torch.from_numpy(process_data['loss_lower_bound']).to(device)
+    print('config:', config)
+    if config['process_config']['name'] == 'mixture':
+        dataloader, loss_lower_bound, d_vocab = load_mixture_data(config, device, logger.base_dir)
     else:
-        # Data wasn't pre-generated, generate it now
-        dataloader, loss_lower_bound, d_vocab = get_dataloader_and_loss_lower_bound_from_process(
-            process_params=config['process_config'],
-            n_ctx=config['model_config']['n_ctx'],
-            bos=config['train_config']['bos'],
-            batches_per_epoch=config['train_config']['batches_per_epoch'],
-            batch_size=config['train_config']['batch_size'],
-            device=device,
-        )
+        dataloader, loss_lower_bound, d_vocab = load_data(config, device)
 
     np.savetxt('loss_lower_bound.txt', loss_lower_bound.cpu().numpy(), fmt='%f', delimiter=',', header='loss_lower_bound')
 

@@ -12,6 +12,7 @@ poetry.lock
 wandb/
 .DS_Store
 *.pt
+process_data/
 examples/belief_centers_comparison_cmap.svg
 examples/belief_evolution.gif
 examples/quantum_animation.gif

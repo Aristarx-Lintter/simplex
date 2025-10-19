@@ -15,6 +15,7 @@ def load_process_data(config, process_dir):
     data_dir = os.path.join(process_dir, process_string)
     
     if not os.path.exists(data_dir):
+        print(f"Data directory {data_dir} does not exist")
         return None
     
     with open(os.path.join(data_dir, 'metadata.json'), 'r') as f:

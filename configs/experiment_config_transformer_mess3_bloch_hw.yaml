@@ -2,9 +2,9 @@ global_config:
   output_dir: "./results"
   device: cuda
   parallel: true
-  wandb: true
+  wandb: false
   wandb_project: "quantum_transformer"
-  process_dir: "./process_data"
+  process_dir: "/workspace-SR008.nfs2/nachevsky/simplex/epsilon-transformers/process_data" 
   val_every: 1 # after n epochs, ~ is None
   scheduler: true
   save_every: 100
@@ -36,9 +36,11 @@ sweep_config:
     n_heads:
       - 2
   process_config:
-    - name: "tom_quantum"
-      alpha: 1.0
-      beta: 7.14142842854285
-    - name: "mess3"
-      x: 0.05
-      a: 0.85
+    - name: "mixture"
+      processes:
+      - name: "tom_quantum"
+        alpha: 1.0
+        beta: 7.14142842854285
+      - name: "mess3"
+        x: 0.05
+        a: 0.85
