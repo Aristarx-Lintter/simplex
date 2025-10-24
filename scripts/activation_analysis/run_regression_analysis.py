@@ -68,13 +68,6 @@ from scripts.activation_analysis.regression import (
     run_activation_to_beliefs_regression_kf,
 )
 
-model_data_manager = ModelDataManager(device=DEVICE, use_company_s3=True)
-belief_generator = BeliefStateGenerator(model_data_manager, device=DEVICE)
-reg_analyzer = RegressionAnalyzer(device=REGRESSION_DEVICE, use_efficient_pinv=True)
-s3_loader = S3ModelLoader(use_company_credentials=True)
-
-os.makedirs(output_dir, exist_ok=True)
-
 def _combine_layer_activations(nn_acts):
     """Combine activations from all layers into a single tensor, by concatenating them
     make sure to reshape back to the original shape
@@ -411,185 +404,195 @@ def compute_kfold_split(flat_probs, n_splits=N_SPLITS, random_state=RANDOM_STATE
     # kf is a list of tuples, each tuple contains two lists: the indices of the training set and the indices of the test set
     return kf, all_positions
 
-for sweep, run_id_int in sweep_run_pairs:
-    run_dir = f'{output_dir}/{sweep}_{run_id_int}'
-    os.makedirs(run_dir, exist_ok=True) # Create the directory if it doesn't exist
+if __name__ == "__main__":
 
-    runs = s3_loader.list_runs_in_sweep(sweep)
-    # keep the entry of run that has f'run_{run_id_int}' in it
-    run_id = [x for x in runs if f'run_{run_id_int}' in x][0]
+    model_data_manager = ModelDataManager(device=DEVICE, use_company_s3=True)
+    belief_generator = BeliefStateGenerator(model_data_manager, device=DEVICE)
+    reg_analyzer = RegressionAnalyzer(device=REGRESSION_DEVICE, use_efficient_pinv=True)
+    s3_loader = S3ModelLoader(use_company_credentials=True)
 
-    print(run_id)
-    ckpts = s3_loader.list_checkpoints(sweep, run_id)
-    model, run_config = s3_loader.load_checkpoint(sweep, run_id, ckpts[0])
+    os.makedirs(output_dir, exist_ok=True)
 
 
-    loss_df = s3_loader.load_loss_from_run(sweep, run_id)
+    for sweep, run_id_int in sweep_run_pairs:
+        run_dir = f'{output_dir}/{sweep}_{run_id_int}'
+        os.makedirs(run_dir, exist_ok=True) # Create the directory if it doesn't exist
 
-    n_ctx = run_config["model_config"]["n_ctx"]
-    run_config["n_ctx"] = n_ctx
-    nn_inputs, nn_beliefs, _, nn_probs, _ = prepare_msp_data(
-        run_config, run_config["process_config"]
-    )
+        runs = s3_loader.list_runs_in_sweep(sweep)
+        # keep the entry of run that has f'run_{run_id_int}' in it
+        run_id = [x for x in runs if f'run_{run_id_int}' in x][0]
 
-    classical_beliefs = belief_generator.generate_classical_belief_states(
-    run_config, max_order=3)
-
-    classical_nn_inputs = classical_beliefs['markov_order_3']['inputs']
-    classical_nn_beliefs = classical_beliefs['markov_order_3']['beliefs']
-    classical_nn_probs = classical_beliefs['markov_order_3']['probs']
-    
-    # Deduplicate neural network data
-    dedup_probs, dedup_beliefs, dedup_indices, prefix_to_indices = deduplicate_data(
-        nn_inputs, 
-        nn_probs, 
-        nn_beliefs
-    )
-
-    kf, all_positions = compute_kfold_split(dedup_probs)
-    kf_list = list(kf.split(all_positions))
-    
-    # Deduplicate classical model data
-    classical_dedup_probs, classical_dedup_beliefs, classical_dedup_indices, classical_prefix_to_indices = deduplicate_data(
-        classical_nn_inputs, 
-        classical_nn_probs, 
-        classical_nn_beliefs
-    )
-
-    classical_kf, classical_all_positions = compute_kfold_split(classical_dedup_probs)
-    classical_kf_list = list(classical_kf.split(classical_all_positions))
-
-    ground_truth_data = defaultdict(dict) # Keys: ckpt -> layer -> predictions
-    ground_truth_data['probs'] = dedup_probs.cpu().numpy() if torch.is_tensor(dedup_probs) else np.array(dedup_probs)
-    ground_truth_data['beliefs'] = dedup_beliefs.cpu().numpy() if torch.is_tensor(dedup_beliefs) else np.array(dedup_beliefs)
-    ground_truth_data['indices'] = np.array(dedup_indices, dtype=object)
-    joblib.dump(ground_truth_data, f'{run_dir}/ground_truth_data.joblib')
-
-    classical_ground_truth_data = defaultdict(dict) # Keys: ckpt -> layer -> predictions
-    classical_ground_truth_data['probs'] = classical_dedup_probs.cpu().numpy()
-    classical_ground_truth_data['beliefs'] = classical_dedup_beliefs.cpu().numpy()
-    classical_ground_truth_data['indices'] = np.array(classical_dedup_indices, dtype=object)
-    joblib.dump(classical_ground_truth_data, f'{run_dir}/markov3_ground_truth_data.joblib')
-    
-    checkpoints = s3_loader.list_checkpoints(sweep, run_id)
-
-    if ONLY_INITIAL_AND_FINAL:
-        selected_checkpoints = [checkpoints[0], checkpoints[-1]]
-        selected_epochs = [0, len(checkpoints) - 1]
-        print(f"Processing {len(selected_checkpoints)} checkpoints: first and last")
-    else:
-        # Process all checkpoints
-        selected_checkpoints = checkpoints
-        selected_epochs = list(range(len(checkpoints)))
-        print(f"Processing all {len(selected_checkpoints)} checkpoints")
+        print(run_id)
+        ckpts = s3_loader.list_checkpoints(sweep, run_id)
+        model, run_config = s3_loader.load_checkpoint(sweep, run_id, ckpts[0])
 
 
-    for i, (epoch, ckpt) in enumerate(zip(selected_epochs, selected_checkpoints)):
-        print(f"Processing checkpoint {i+1}/{len(selected_checkpoints)}: {ckpt} (epoch {epoch})")
-        model, run_config = s3_loader.load_checkpoint(sweep, run_id, ckpt)
+        loss_df = s3_loader.load_loss_from_run(sweep, run_id)
 
-        #ckpt_ind is between / and .pt
-        ckpt_ind = ckpt.split('/')[-1].split('.')[0]
-        # we want the value of 'val_loss_mean' where num_tokens_seen == ckpt_ind
-        try:
-            filtered_df = loss_df[loss_df['epoch'] == epoch-1]
-            if len(filtered_df) > 0 and 'val_loss_mean' in filtered_df.columns:
-                val_loss_mean = filtered_df['val_loss_mean'].values[0]
-            else:
+        n_ctx = run_config["model_config"]["n_ctx"]
+        run_config["n_ctx"] = n_ctx
+        nn_inputs, nn_beliefs, _, nn_probs, _ = prepare_msp_data(
+            run_config, run_config["process_config"]
+        )
+
+        classical_beliefs = belief_generator.generate_classical_belief_states(
+        run_config, max_order=3)
+
+        classical_nn_inputs = classical_beliefs['markov_order_3']['inputs']
+        classical_nn_beliefs = classical_beliefs['markov_order_3']['beliefs']
+        classical_nn_probs = classical_beliefs['markov_order_3']['probs']
+        
+        # Deduplicate neural network data
+        dedup_probs, dedup_beliefs, dedup_indices, prefix_to_indices = deduplicate_data(
+            nn_inputs, 
+            nn_probs, 
+            nn_beliefs
+        )
+
+        kf, all_positions = compute_kfold_split(dedup_probs)
+        kf_list = list(kf.split(all_positions))
+        
+        # Deduplicate classical model data
+        classical_dedup_probs, classical_dedup_beliefs, classical_dedup_indices, classical_prefix_to_indices = deduplicate_data(
+            classical_nn_inputs, 
+            classical_nn_probs, 
+            classical_nn_beliefs
+        )
+
+        classical_kf, classical_all_positions = compute_kfold_split(classical_dedup_probs)
+        classical_kf_list = list(classical_kf.split(classical_all_positions))
+
+        ground_truth_data = defaultdict(dict) # Keys: ckpt -> layer -> predictions
+        ground_truth_data['probs'] = dedup_probs.cpu().numpy() if torch.is_tensor(dedup_probs) else np.array(dedup_probs)
+        ground_truth_data['beliefs'] = dedup_beliefs.cpu().numpy() if torch.is_tensor(dedup_beliefs) else np.array(dedup_beliefs)
+        ground_truth_data['indices'] = np.array(dedup_indices, dtype=object)
+        joblib.dump(ground_truth_data, f'{run_dir}/ground_truth_data.joblib')
+
+        classical_ground_truth_data = defaultdict(dict) # Keys: ckpt -> layer -> predictions
+        classical_ground_truth_data['probs'] = classical_dedup_probs.cpu().numpy()
+        classical_ground_truth_data['beliefs'] = classical_dedup_beliefs.cpu().numpy()
+        classical_ground_truth_data['indices'] = np.array(classical_dedup_indices, dtype=object)
+        joblib.dump(classical_ground_truth_data, f'{run_dir}/markov3_ground_truth_data.joblib')
+        
+        checkpoints = s3_loader.list_checkpoints(sweep, run_id)
+
+        if ONLY_INITIAL_AND_FINAL:
+            selected_checkpoints = [checkpoints[0], checkpoints[-1]]
+            selected_epochs = [0, len(checkpoints) - 1]
+            print(f"Processing {len(selected_checkpoints)} checkpoints: first and last")
+        else:
+            # Process all checkpoints
+            selected_checkpoints = checkpoints
+            selected_epochs = list(range(len(checkpoints)))
+            print(f"Processing all {len(selected_checkpoints)} checkpoints")
+
+
+        for i, (epoch, ckpt) in enumerate(zip(selected_epochs, selected_checkpoints)):
+            print(f"Processing checkpoint {i+1}/{len(selected_checkpoints)}: {ckpt} (epoch {epoch})")
+            model, run_config = s3_loader.load_checkpoint(sweep, run_id, ckpt)
+
+            #ckpt_ind is between / and .pt
+            ckpt_ind = ckpt.split('/')[-1].split('.')[0]
+            # we want the value of 'val_loss_mean' where num_tokens_seen == ckpt_ind
+            try:
+                filtered_df = loss_df[loss_df['epoch'] == epoch-1]
+                if len(filtered_df) > 0 and 'val_loss_mean' in filtered_df.columns:
+                    val_loss_mean = filtered_df['val_loss_mean'].values[0]
+                else:
+                    val_loss_mean = float('nan')
+            except (KeyError, IndexError, AttributeError):
                 val_loss_mean = float('nan')
-        except (KeyError, IndexError, AttributeError):
-            val_loss_mean = float('nan')
-        
-        act_extractor = ActivationExtractor(device=DEVICE)
-        nn_acts_ = act_extractor.extract_activations(
-            model,
-            nn_inputs,
-            get_nn_type(run_id),
-            relevant_activation_keys=TRANSFORMER_ACTIVATION_KEYS,
-        )
-        nn_acts = {}
-        for layer, acts in nn_acts_.items():
-            nn_acts[layer] = acts
-        nn_acts['combined'] = _combine_layer_activations(nn_acts)
-
-        classical_acts_ = act_extractor.extract_activations(
-            model,
-            classical_nn_inputs,
-            get_nn_type(run_id),
-            relevant_activation_keys=TRANSFORMER_ACTIVATION_KEYS,
-        )
-        classical_acts = {}
-        for layer, acts in classical_acts_.items():
-            classical_acts[layer] = acts
-        classical_acts['combined'] = _combine_layer_activations(classical_acts)
-        
-        save_data = collections.defaultdict(nested_dict_factory) # Use the named function here
-        classical_save_data = collections.defaultdict(nested_dict_factory) # Use the named function here
-        
-        for layer, act in nn_acts.items():
             
-            # dedup the activations
-            dedup_acts, dedup_indices = deduplicate_tensor(prefix_to_indices, act, aggregation_fn=None)
-
-            classical_dedup_acts, classical_dedup_indices = deduplicate_tensor(classical_prefix_to_indices, classical_acts[layer], aggregation_fn=None)
-            
-            zscore_acts = (dedup_acts.numpy() - dedup_acts.numpy().mean(axis=0)) / dedup_acts.numpy().std(axis=0)
-            cum_var_exp, _, _ = calculate_weighted_pca_variance(dedup_acts.numpy(), dedup_probs.numpy())
-            cum_var_exp_zscore, _, _ = calculate_weighted_pca_variance(zscore_acts, dedup_probs.numpy())
-
-            classical_zscore_acts = (classical_dedup_acts.numpy() - classical_dedup_acts.numpy().mean(axis=0)) / classical_dedup_acts.numpy().std(axis=0)
-            classical_cum_var_exp, _, _ = calculate_weighted_pca_variance(classical_dedup_acts.numpy(), classical_dedup_probs.numpy())
-            classical_cum_var_exp_zscore, _, _ = calculate_weighted_pca_variance(classical_zscore_acts, classical_dedup_probs.numpy())
-
-            # Move tensors to configured device
-            device = torch.device(DEVICE)
-            results = run_activation_to_beliefs_regression_kf(
-                reg_analyzer,
-                dedup_acts.to(device),
-                dedup_beliefs.to(device),
-                dedup_probs.to(device),
-                kf_list,
-                rcond_values=RCOND_SWEEP_LIST,
+            act_extractor = ActivationExtractor(device=DEVICE)
+            nn_acts_ = act_extractor.extract_activations(
+                model,
+                nn_inputs,
+                get_nn_type(run_id),
+                relevant_activation_keys=TRANSFORMER_ACTIVATION_KEYS,
             )
+            nn_acts = {}
+            for layer, acts in nn_acts_.items():
+                nn_acts[layer] = acts
+            nn_acts['combined'] = _combine_layer_activations(nn_acts)
 
-            classical_results = run_activation_to_beliefs_regression_kf(
-                reg_analyzer,
-                classical_dedup_acts.to(device),
-                classical_dedup_beliefs.to(device),
-                classical_dedup_probs.to(device),
-                classical_kf_list,
-                rcond_values=RCOND_SWEEP_LIST,
+            classical_acts_ = act_extractor.extract_activations(
+                model,
+                classical_nn_inputs,
+                get_nn_type(run_id),
+                relevant_activation_keys=TRANSFORMER_ACTIVATION_KEYS,
             )
-
-            # Calculate Euclidean distance weighted by probabilities
-            save_data[layer]['predicted_beliefs'] = results['predictions']
-            save_data[layer]['rmse'] = results['final_metrics']['rmse']
-            save_data[layer]['mae'] = results['final_metrics']['mae']
-            save_data[layer]['r2'] = results['final_metrics']['r2']
-            save_data[layer]['dist'] = results['final_metrics']['dist']
-            save_data[layer]['mse'] = results['final_metrics']['mse']
-            save_data[layer]['cum_var_exp'] = cum_var_exp
-            save_data[layer]['cum_var_exp_zscore'] = cum_var_exp_zscore
-            save_data[layer]['val_loss_mean'] = val_loss_mean
-
-            # Calculate Euclidean distance weighted by probabilities
+            classical_acts = {}
+            for layer, acts in classical_acts_.items():
+                classical_acts[layer] = acts
+            classical_acts['combined'] = _combine_layer_activations(classical_acts)
             
-            # Only save predictions for epoch 0 or final epoch to save space
-            if epoch == 0 or epoch == len(checkpoints) - 1:
-                classical_save_data[layer]['predicted_beliefs'] = classical_results['predictions']
-            else:
-                classical_save_data[layer]['predicted_beliefs'] = None  # Skip storing predictions for intermediate epochs
-            classical_save_data[layer]['rmse'] = classical_results['final_metrics']['rmse']
-            classical_save_data[layer]['mae'] = classical_results['final_metrics']['mae']
-            classical_save_data[layer]['r2'] = classical_results['final_metrics']['r2']
-            classical_save_data[layer]['dist'] = classical_results['final_metrics']['dist']
-            classical_save_data[layer]['mse'] = classical_results['final_metrics']['mse']
-            classical_save_data[layer]['cum_var_exp'] = classical_cum_var_exp
-            classical_save_data[layer]['cum_var_exp_zscore'] = classical_cum_var_exp_zscore
-            classical_save_data[layer]['val_loss_mean'] = val_loss_mean
-        
-        # Save each checkpoint's data to a separate file
-        joblib.dump(save_data, f'{run_dir}/checkpoint_{ckpt_ind}.joblib')
-        joblib.dump(classical_save_data, f'{run_dir}/markov3_checkpoint_{ckpt_ind}.joblib')
+            save_data = collections.defaultdict(nested_dict_factory) # Use the named function here
+            classical_save_data = collections.defaultdict(nested_dict_factory) # Use the named function here
+            
+            for layer, act in nn_acts.items():
+                
+                # dedup the activations
+                dedup_acts, dedup_indices = deduplicate_tensor(prefix_to_indices, act, aggregation_fn=None)
+
+                classical_dedup_acts, classical_dedup_indices = deduplicate_tensor(classical_prefix_to_indices, classical_acts[layer], aggregation_fn=None)
+                
+                zscore_acts = (dedup_acts.numpy() - dedup_acts.numpy().mean(axis=0)) / dedup_acts.numpy().std(axis=0)
+                cum_var_exp, _, _ = calculate_weighted_pca_variance(dedup_acts.numpy(), dedup_probs.numpy())
+                cum_var_exp_zscore, _, _ = calculate_weighted_pca_variance(zscore_acts, dedup_probs.numpy())
+
+                classical_zscore_acts = (classical_dedup_acts.numpy() - classical_dedup_acts.numpy().mean(axis=0)) / classical_dedup_acts.numpy().std(axis=0)
+                classical_cum_var_exp, _, _ = calculate_weighted_pca_variance(classical_dedup_acts.numpy(), classical_dedup_probs.numpy())
+                classical_cum_var_exp_zscore, _, _ = calculate_weighted_pca_variance(classical_zscore_acts, classical_dedup_probs.numpy())
+
+                # Move tensors to configured device
+                device = torch.device(DEVICE)
+                results = run_activation_to_beliefs_regression_kf(
+                    reg_analyzer,
+                    dedup_acts.to(device),
+                    dedup_beliefs.to(device),
+                    dedup_probs.to(device),
+                    kf_list,
+                    rcond_values=RCOND_SWEEP_LIST,
+                )
+
+                classical_results = run_activation_to_beliefs_regression_kf(
+                    reg_analyzer,
+                    classical_dedup_acts.to(device),
+                    classical_dedup_beliefs.to(device),
+                    classical_dedup_probs.to(device),
+                    classical_kf_list,
+                    rcond_values=RCOND_SWEEP_LIST,
+                )
+
+                # Calculate Euclidean distance weighted by probabilities
+                save_data[layer]['predicted_beliefs'] = results['predictions']
+                save_data[layer]['rmse'] = results['final_metrics']['rmse']
+                save_data[layer]['mae'] = results['final_metrics']['mae']
+                save_data[layer]['r2'] = results['final_metrics']['r2']
+                save_data[layer]['dist'] = results['final_metrics']['dist']
+                save_data[layer]['mse'] = results['final_metrics']['mse']
+                save_data[layer]['cum_var_exp'] = cum_var_exp
+                save_data[layer]['cum_var_exp_zscore'] = cum_var_exp_zscore
+                save_data[layer]['val_loss_mean'] = val_loss_mean
+
+                # Calculate Euclidean distance weighted by probabilities
+                
+                # Only save predictions for epoch 0 or final epoch to save space
+                if epoch == 0 or epoch == len(checkpoints) - 1:
+                    classical_save_data[layer]['predicted_beliefs'] = classical_results['predictions']
+                else:
+                    classical_save_data[layer]['predicted_beliefs'] = None  # Skip storing predictions for intermediate epochs
+                classical_save_data[layer]['rmse'] = classical_results['final_metrics']['rmse']
+                classical_save_data[layer]['mae'] = classical_results['final_metrics']['mae']
+                classical_save_data[layer]['r2'] = classical_results['final_metrics']['r2']
+                classical_save_data[layer]['dist'] = classical_results['final_metrics']['dist']
+                classical_save_data[layer]['mse'] = classical_results['final_metrics']['mse']
+                classical_save_data[layer]['cum_var_exp'] = classical_cum_var_exp
+                classical_save_data[layer]['cum_var_exp_zscore'] = classical_cum_var_exp_zscore
+                classical_save_data[layer]['val_loss_mean'] = val_loss_mean
+            
+            # Save each checkpoint's data to a separate file
+            joblib.dump(save_data, f'{run_dir}/checkpoint_{ckpt_ind}.joblib')
+            joblib.dump(classical_save_data, f'{run_dir}/markov3_checkpoint_{ckpt_ind}.joblib')
 
 

@@ -12,6 +12,13 @@ poetry.lock
 wandb/
 .DS_Store
 *.pt
+logs/
+data_here/
+belief_regression_results/
+analysis/
+**/.ipynb_checkpoints/
+**/.cache/
+target_result/
 process_data/
 examples/belief_centers_comparison_cmap.svg
 examples/belief_evolution.gif

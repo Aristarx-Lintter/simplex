@@ -79,23 +79,41 @@ def train_epoch_all(model, optimizer, dataset, scheduler=None):
     #    scheduler.step(loss.mean())
     return loss
 
-def validate_epoch_all(model, dataset, scheduler=None):
+# drop-in replacement: batched validation with same weighting and scheduler logic
+def validate_epoch_all(model, dataset, scheduler=None, batch_size: int = 8192):
     model.eval()
-
     with torch.no_grad():
-        X, Y, probs = dataset.validation_data()
-        logits = model(X)
-        batch_size, seq_length, vocab_size = logits.shape
-        logits_flat = logits.reshape(-1, vocab_size)
-        targets_flat = Y.reshape(-1).to(torch.int64)
-        loss = F.cross_entropy(logits_flat, targets_flat, reduction='none')
-        loss = loss.reshape(batch_size, seq_length)
-        # multiply the loss (batch_size, seq_length) by the probabilities (batch_size) to get the weighted loss (batch_size, seq_length)
-        loss = loss * probs.unsqueeze(1)
+        X_all, Y_all, probs_all = dataset.validation_data()  # full tensors
+        device = X_all.device
+        L = X_all.shape[1]
+        pos_sums = torch.zeros(L, device=device, dtype=torch.float32)
+
+        total_weighted_sum = 0.0     # matches loss.mean() semantics over all tokens
+        total_tokens = 0
+
+        for start in range(0, X_all.shape[0], batch_size):
+            end = min(start + batch_size, X_all.shape[0])
+            X = X_all[start:end]
+            Y = Y_all[start:end]
+            probs = probs_all[start:end]
+
+            logits = model(X)                         # [B, L, V]
+            B, L, V = logits.shape
+            loss = F.cross_entropy(
+                logits.reshape(-1, V), Y.reshape(-1).to(torch.int64), reduction='none'
+            ).reshape(B, L)                           # [B, L]
+
+            weighted = loss * probs.unsqueeze(1)      # [B, L]
+            pos_sums += weighted.sum(dim=0)           # accumulate per-position sums
+
+            total_weighted_sum += float(weighted.sum().item())
+            total_tokens += B * L
+
         if scheduler:
-            scheduler.step(loss.mean())
-            #scheduler.step()
-        return loss.sum(dim=0)
+            # preserve original behavior: scheduler on mean over tokens of the weighted loss
+            scheduler.step(total_weighted_sum / max(1, total_tokens))
+
+        return pos_sums
 
 def validate_epoch_sample(model, dataset):
     pass

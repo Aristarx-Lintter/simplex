@@ -49,6 +49,8 @@ def generate_all_seqs(process: GHMM, seq_len: int, bos: bool = True) -> Tuple[to
         raise ValueError(f"Sum of probabilities is {probs.sum().item():.6f}, expected 1.0")
 
     return transformer_inputs, probs, loss_lower_bound
+
+
 class BatchGenerator(IterableDataset):
     def __init__(self, transformer_inputs, probs, batches_per_epoch, batch_size, device):
         self.transformer_inputs = transformer_inputs.to(device)
@@ -61,7 +63,9 @@ class BatchGenerator(IterableDataset):
     def __iter__(self):
         for _ in range(self.batches_per_epoch):
             # Sample indices based on probabilities
-            sample_inds = torch.multinomial(self.probs, self.batch_size, replacement=True)
+            sample_inds = torch.multinomial(self.probs.cpu(), self.batch_size, replacement=True)
+            sample_inds = sample_inds.to(self.transformer_inputs.device)
+            
             batch = self.transformer_inputs[sample_inds]
             X, Y = batch[:, :-1], batch[:, 1:]
             yield X, Y

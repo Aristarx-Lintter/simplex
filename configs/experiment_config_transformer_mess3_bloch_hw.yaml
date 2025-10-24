@@ -27,14 +27,14 @@ sweep_config:
     learning_rate:
       - 1.0e-4
     batch_size:
-      - 128
+      - 256
   model_config:
     d_head:
       - 16
     n_layers:
-      - 2
+      - 4
     n_heads:
-      - 2
+      - 4
   process_config:
     - name: "mixture"
       processes:

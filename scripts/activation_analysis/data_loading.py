@@ -25,7 +25,7 @@ class ActivationExtractor:
     def __init__(self, device):
         self.device = device
     
-    def get_transformer_activations(self, model, nn_inputs, relevant_activation_keys):
+    def get_transformer_activations(self, model: HookedTransformer, nn_inputs, relevant_activation_keys):
         """Extract activations from a transformer model."""
         _, acts = model.run_with_cache(nn_inputs, names_filter=lambda x: x in relevant_activation_keys)
         return acts
