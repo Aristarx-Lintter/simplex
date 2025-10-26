@@ -12,13 +12,15 @@ from torch.nn import functional as F
 from tqdm import tqdm
 from transformer_lens import HookedTransformer, HookedTransformerConfig
 
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
-from extractors import load_data, load_mixture_data
 from epsilon_transformers.training.logger import StructuredLogger
+from src.extractors import load_data
+from src.dataset import load_mixture_data
 
 
 

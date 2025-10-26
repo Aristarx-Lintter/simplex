@@ -4,6 +4,7 @@ from epsilon_transformers.process.GHMM import GHMM, TransitionMatrixGHMM
 from epsilon_transformers.process.transition_matrices import get_matrix_from_args
 from torch.utils.data import IterableDataset
 
+
 def generate_all_seqs(process: GHMM, seq_len: int, bos: bool = True) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Generate all possible sequences and their probabilities for a given process and sequence length.
@@ -74,36 +75,7 @@ class BatchGenerator(IterableDataset):
         X = self.transformer_inputs[:, :-1]
         Y = self.transformer_inputs[:, 1:]
         return X, Y, self.probs
-"""
-class BatchGenerator:
-    def __init__(self, transformer_inputs, probs, batches_per_epoch, batch_size):
-        self.transformer_inputs = transformer_inputs
-        self.probs = probs
-        self.batches_per_epoch = batches_per_epoch
-        self.batch_size = batch_size
 
-    def __len__(self):
-        return self.batches_per_epoch
-
-    def __iter__(self):
-        total_samples = self.batches_per_epoch * self.batch_size
-        sample_inds = torch.multinomial(self.probs, total_samples, replacement=True)
-        sample_inds = sample_inds.reshape(self.batches_per_epoch, self.batch_size)
-
-        for batch_indices in sample_inds:
-            batch = self.transformer_inputs[batch_indices]
-            X, Y = batch[:, :-1], batch[:, 1:]
-            yield X, Y
-
-    def validation_data(self):
-        total_samples = self.transformer_inputs.shape[0]
-        for start_idx in range(0, total_samples, self.batch_size):
-            end_idx = min(start_idx + self.batch_size, total_samples)
-            batch = self.transformer_inputs[start_idx:end_idx]
-            batch_probs = self.probs[start_idx:end_idx]
-            X, Y = batch[:, :-1], batch[:, 1:]
-            yield X, Y, batch_probs
-"""
 
 def get_dataloader_and_loss_lower_bound_from_process(process_params: dict, n_ctx: int, bos: bool, batches_per_epoch: int, batch_size: int, device: str) -> Tuple[BatchGenerator, torch.Tensor]:
     # Initialize the process

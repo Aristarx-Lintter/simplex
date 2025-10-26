@@ -13,9 +13,9 @@ wandb/
 .DS_Store
 *.pt
 logs/
+./analysis/
 data_here/
 belief_regression_results/
-analysis/
 **/.ipynb_checkpoints/
 **/.cache/
 target_result/
@@ -26,8 +26,7 @@ examples/quantum_animation.gif
 examples/quantum_animation.mp4
 examples/quantum_animation2.gif
 results/
-data/
-notebooks/
+./data/
 **.json
 **.npy
 **.npy
@@ -43,7 +42,6 @@ temp/
 **.joblib
 **.pkl
 **.pt
-**.png
 **.pdf
 **.html
 **.txt
